@@ -68,10 +68,10 @@ The judging reality: most teams in this problem statement will show a complaint 
 
 **Effort:** 5 h.
 
-### 9. Collection vehicle (ghanta gaadi) coverage
+### 9. Collection vehicle (ghanta gaadi) coverage: simulated version built
 **Edge:** catches the root cause of "irregular garbage clearance". Lanes the van did not visit glow; "truck did not come" reports are cross-checked against the van's trail automatically.
 
-**Build:** ingest vehicle GPS (simulated for the demo; NMC's vendors already track vehicles). Snap trails to OSM roads, mark lane segments as covered or missed per day, and compare with missed-collection reports.
+**Built:** six simulated vans on real roads, lane coverage, skipped lanes, route-confirmed complaints, the resident ETA and crew rounds. **Next:** ingest the vendors' real vehicle GPS (NMC's vendors already track vehicles). Snap trails to OSM roads, mark lane segments as covered or missed per day, and compare with missed-collection reports.
 
 **Effort:** 6 h with simulated data.
 

@@ -10,7 +10,9 @@ SwachhGrid's rule: **show what is real, label what is estimated, and keep demo d
 | Esri World Imagery | Satellite ground in every map | Esri terms of use, attribution shown | **Real** |
 | OpenStreetMap via [OpenFreeMap](https://openfreemap.org) | Roads, rivers and nallahs, place and road names | ODbL | **Real** |
 | [Open-Meteo](https://open-meteo.com) | Rainfall in Nagpur over the last 72 h | CC BY 4.0 | **Real**, live |
-| Seed generator in `scripts/export_data.py` | 330 reports over 30 days | — | **Seeded demo data** |
+| OpenStreetMap roads via the Overpass API | 8,636 road segments in the pilot box, for van routes | ODbL | **Real** roads |
+| Route simulator in `scripts/export_routes.py` | Six van routes, 846 driven and 64 skipped lanes | — | **Simulated** on real roads |
+| Seed generators in `scripts/export_data.py` and `export_routes.py` | 330 reports over 30 days, plus 12 "truck did not come" reports beside skipped lanes | — | **Seeded demo data** |
 
 ### What the building data looks like
 
@@ -65,6 +67,18 @@ Seeded reports carry no photos, and the command centre says so in their detail p
 | 426 slum settlements, 298 notified | Cited | 2024 press reports citing NMC |
 | ~8.6 lakh slum residents | Cited | NMC survey reported by Nagpur Today, 2016 |
 
+## Van routes
+
+No live collection-vehicle GPS is public for Nagpur, so the vans are simulated: two per pilot zone, each on a 6.2 km beat around a dense locality (Mominpura, Itwari–Mahal, Kalamna, Pardi, Vaishali Nagar, Yashodhara Nagar). The roads they drive are real OpenStreetMap roads. Everything derived from them (positions, ETAs, lanes skipped, route checks) is labelled as simulated where it appears. NMC's collection vendors track their vehicles; with that feed, `routes.json` would be replaced by real trails.
+
+The roads came from this Overpass query:
+
+```
+[out:json][timeout:120];
+way["highway"~"^(primary|secondary|tertiary|unclassified|residential|living_street|service|primary_link|secondary_link|tertiary_link)$"](21.135,79.085,21.19,79.175);
+(._;>;);out skel qt;
+```
+
 ## Rebuilding the data
 
 ```bash
@@ -78,6 +92,12 @@ python scripts/fetch_buildings.py .pylib nagpur.duckdb
 ```bash
 python scripts/export_data.py .pylib nagpur.duckdb public/data
 ```
+
+```bash
+python scripts/export_routes.py roads.json public/data
+```
+
+Run `export_routes.py` after `export_data.py`, because it appends its seeded reports to `seed.json`.
 
 `fetch_buildings.py` reads only the row groups whose bounding boxes intersect Nagpur, so it downloads a few hundred MB, not the whole planet. It takes about 90 seconds on a home connection.
 

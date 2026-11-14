@@ -15,6 +15,7 @@
   --color-letter: #f4f1e8;
   --color-wall: #e9e4d6;
   --color-sign-blue: #2f6db5;
+  --color-leaf: #7ed3a8; /* light board green: the colour of "cleared" on dark boards */
 
   --font-display: var(--font-yatra), "Mukta", sans-serif;
   --font-sign: var(--font-teko), "Mukta", sans-serif;

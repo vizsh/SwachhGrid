@@ -8,6 +8,8 @@ import { type Lang, LANGS, T } from "@/lib/i18n";
 import { fileToSmallDataUrl, getPosition } from "@/lib/photo";
 import { findDuplicate, useStore, useTickets } from "@/lib/store";
 import MiniMap from "./MiniMap";
+import { VanEtaCard } from "./VanCards";
+import { useClock, useRoutes } from "@/lib/vans";
 import { CAT_PAINT, CustodyLine, Stamp } from "./paint";
 
 const ICONS: Record<Category, LucideIcon> = {
@@ -43,6 +45,8 @@ export default function ReportFlow() {
   const t = T[lang];
 
   useEffect(() => void load(), [load]);
+  const routes = useRoutes();
+  const tick = useClock(0.5);
 
   const openNearby = useMemo(() => tickets.filter((x) => x.status !== "resolved"), [tickets]);
   const mine = useMemo(() => tickets.filter((x) => x.source === "user").reverse(), [tickets]);
@@ -218,6 +222,7 @@ export default function ReportFlow() {
                   );
                 })}
               </ul>
+              <VanEtaCard routes={routes} lat={pos.lat} lon={pos.lon} now={tick} tickets={tickets} lang={lang} />
             </section>
           )}
 

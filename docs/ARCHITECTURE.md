@@ -119,6 +119,24 @@ A new report of the same category within 30 m of an open one shows that report f
 
 `zoneFor(lat, lon)` assigns one of three pilot zones from approximate rectangles. NMC publishes its 2025 ward (prabhag) boundaries only as PDF maps; tracing them is on the roadmap.
 
+### Collection vans
+
+[`scripts/export_routes.py`](../scripts/export_routes.py) builds a graph from about 8,600 real OpenStreetMap road segments in the pilot box and drives six vans (two per zone) around 6.2 km beats centred on dense localities. Each step prefers lanes not yet driven, stays within 650 m of the beat centre, and skips about one in seven fresh lanes; the skipped lanes are recorded. The output is `public/data/routes.json` (80 KB): paths with cumulative distance, plus 846 driven and 64 skipped lanes. It also seeds 12 "truck did not come" reports beside skipped lanes so the cross-check has matches.
+
+In the browser, [`vans.ts`](../src/lib/vans.ts) places every van from one formula of wall-clock time: `distance = (now × 12 km/h × 20 + index × 1.7 km) mod round length`. Because the clock is shared, the van on the officer's map, the resident's ETA and the crew's round progress all agree without a server. `nextVan` finds the soonest van whose route passes within 160 m of a point and turns the distance along its loop into real minutes.
+
+### The animation loop
+
+Static layers (135k buildings, lanes, report dots, columns) are rebuilt only when their data changes and are kept in a ref. A separate `requestAnimationFrame` loop at about 30 fps appends the moving layers (van trails as deck.gl `TripsLayer`, van heads and labels, ripples for new reports, clean-up pulses and alert waves) and calls `overlay.setProps`. React never re-renders for animation, so the queue and panels stay responsive.
+
+### Live activity and simulation
+
+The store keeps a `feed` of events. `addTicket`, `patch` (status changes, escalation) and `meToo` log events automatically, so actions from the resident or crew app in another tab appear in the officer's feed. [`simulate.ts`](../src/lib/simulate.ts) runs a "live morning": every 3.2 s it files a report beside an existing one (so it lands in a real dense lane), adds a neighbour's support, or assigns, starts, escalates or clears a job. Simulated reports are tagged `source: "sim"` and never persisted.
+
+### Health alerts
+
+Households reached = buildings in density cells within 300 m of the zone's old water reports, de-duplicated. Sending logs an alert event and animates three-ring waves from each water spot for nine seconds. Nothing is actually sent in the demo.
+
 ## Time travel
 
 The command centre's scrubber sets a virtual time `at` anywhere in the last 30 days. Every model takes `at` as input (`isOpenAt`, `ageHours`, `isOverdue`, `priority`), so the map, queue, KPIs, meters and tinting all show the city as it was at that moment. Replay advances `at` by six hours every 140 ms.
@@ -137,4 +155,5 @@ The command centre's scrubber sets a virtual time `at` anywhere in the last 30 d
 - Zone boundaries are approximate rectangles.
 - Building heights are estimated from footprint area (under 45 m² ≈ one storey).
 - Seeded reports have no photos.
-- SMS and WhatsApp notifications are not implemented.
+- SMS and WhatsApp notifications are not implemented; the alert broadcast is a demo.
+- Van positions are simulated on real roads; lane coverage comes from the simulation, not real GPS.

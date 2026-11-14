@@ -13,7 +13,8 @@ Before you start: open `/command` once so the building tiles are cached, and pre
 
 ## 0:45 The resident (`/report`, phone size)
 
-- It opens in **Marathi**. Switch to Hindi and back to show all three languages.
+- It opens in **Marathi**. Under the six signs: *your ghanta gaadi GB-1 arrives in about 7 minutes*, with a moving marker.
+- Switch to Hindi and back to show all three languages.
 - Tap **तुंबलेले गटार** (blocked drain). Take a photo, or skip it.
 - The map is satellite imagery; drag it so the pin sits on a lane. Press **पाठवा**.
 - Show the filed card: ID, locality, **Zone 6**, the custody line at step 1.
@@ -28,6 +29,14 @@ Before you start: open `/command` once so the building tiles are cached, and pre
 - Toggle **Chronic spots**: 3D columns show where reports keep coming back.
 - Press **Replay 30 days**: hotspots grow and clear, and the numbers rewind with them.
 - Point at **Zones**: Ashi Nagar shows **High** breeding risk from week-old stagnant water; the rainfall figure is live.
+
+## 2:45 The city moves (`/command`)
+
+- Press **Run a live morning** on the Live activity board. Reports drop in with rings, neighbours back them, crews start and clear jobs (green pulses), and every event lands in the feed.
+- Point at the yellow vans with trails: "these are the ghanta gaadis, on real roads." Red dashed lanes are lanes a van skipped today.
+- Click a **truck did not come** report beside a red lane: *Confirmed by route data: van GB-1 skipped this lane.* Click the van: its round, lanes skipped, and every complaint the route confirms.
+- In **Zones**, press **Alert** on Ashi Nagar (High). Show the Marathi message and households reached, then press **Send alert**: waves spread from each water spot and the SENT stamp lands.
+- Click a bar in the timeline above the scrubber to jump to that day.
 
 ## 3:30 The crew (`/worker`)
 

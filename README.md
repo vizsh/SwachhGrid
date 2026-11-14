@@ -31,7 +31,8 @@ Irregular garbage clearance, overflowing bins and blocked drains in dense urban 
 | **Closing a ticket** | Officer clicks "resolved" | Crew must take an **after-photo within 50 m** of the report. The resident sees before/after and can **reopen** it |
 | **Duplicates** | Ten complaints for one pile | A report within **30 m** of an open one becomes "me too" support |
 | **Language** | English forms | **Marathi first**, Hindi, English; icon-led and large-type for low literacy |
-| **Health** | Separate department | **Mosquito-breeding watch** per zone from old stagnant-water and drain reports plus live rainfall |
+| **Health** | Separate department | **Mosquito-breeding watch** per zone from old stagnant-water and drain reports plus live rainfall, and a **one-click alert** in Marathi to households within 300 m |
+| **Collection** | Not tracked | **Collection vans on real roads**, lanes driven vs **skipped**, and "truck did not come" complaints **confirmed by route data** |
 | **Accountability** | Status text | A **custody line** on every report (reported → assigned → work started → cleared with proof), **deadlines**, **escalation** and a **30-day replay** |
 
 ## The four surfaces
@@ -58,6 +59,16 @@ Irregular garbage clearance, overflowing bins and blocked drains in dense urban 
 </tr>
 </table>
 
+## It moves
+
+- **Ghanta gaadis on real roads.** Six collection vans drive Nagpur's actual lanes in 3D with fading trails. Lanes they skip turn into red dashes, and a "truck did not come" complaint beside one is marked *confirmed by route data*.
+- **Run a live morning.** One button and the city starts working: reports drop in with ripples, neighbours back them, crews assign, start and clear jobs, and late jobs escalate. Every event lands in a live feed.
+- **Health alert broadcast.** For a zone with high mosquito-breeding risk: households reached, the Marathi message, and waves spreading from every water spot when you press Send.
+- **Your van, on the resident's phone.** "Your ghanta gaadi GB-1 arrives in about 7 minutes", from the same shared clock as the officer's map.
+- **A 30-day timeline** of reports and clean-ups that you can click to time-travel.
+
+Details for each are in [docs/FEATURES.md](docs/FEATURES.md#moving-parts-what-makes-the-demo-alive). The vans are simulated on real roads, because no live van GPS is public.
+
 ## Try the whole loop in 90 seconds
 
 1. Open **`/report`** on your phone. Pick **तुंबलेले गटार** (blocked drain), skip or take a photo, drag the map so the pin sits on a lane in Mominpura, press **पाठवा**.
@@ -82,6 +93,7 @@ flowchart LR
   subgraph Build time
     OV[Overture Maps buildings<br/>S3 GeoParquet] -->|scripts/fetch_buildings.py<br/>DuckDB + spatial| DB[(nagpur.duckdb)]
     DB -->|scripts/export_data.py| T[public/data/tiles/14/x/y.json<br/>1,35,721 footprints]
+    OSM[OSM roads via Overpass] -->|scripts/export_routes.py| RT[public/data/routes.json<br/>6 van routes, lane coverage]
     DB --> D[public/data/density.json<br/>55 m building-count grid]
     DB --> S[public/data/seed.json<br/>330 demo reports]
   end
@@ -94,6 +106,8 @@ flowchart LR
     ST --> CC
     EX --> Q[Priority queue]
     OM[Open-Meteo rainfall] --> BW[Breeding watch]
+    RT --> V[Vans, trails, skipped lanes, ETAs]
+    V --> CC
   end
   ESRI[Esri World Imagery] --> CC
   OFM[OpenFreeMap vector tiles<br/>OSM roads, rivers, names] --> CC
@@ -139,11 +153,15 @@ src/
     ReportFlow.tsx     resident three-step report, duplicates, my reports
     WorkerApp.tsx      crew duty board and proof of clean
     LandingLive.tsx    duotone hero map, live tally, top of queue
+    CommandPanels.tsx  live activity feed, van detail, health alert, timeline
+    VanCards.tsx       resident van ETA and crew van rounds
     paint.tsx          Stamp and CustodyLine, the shared signature components
     MiniMap.tsx        drag-the-map pin picker
   lib/
     domain.ts          categories, deadlines, zones, exposure and priority models
-    store.ts           Zustand store, localStorage persistence, cross-tab sync
+    store.ts           Zustand store, activity feed, localStorage persistence, cross-tab sync
+    vans.ts            van routes, shared clock, ETAs, skipped-lane checks
+    simulate.ts        "live morning" event simulation
     buildings.ts       building tile loader and height estimate
     mapStyle.ts        satellite + OSM style
     i18n.ts            Marathi, Hindi, English strings

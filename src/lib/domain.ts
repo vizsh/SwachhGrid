@@ -24,7 +24,7 @@ export interface Ticket {
   photo?: string;
   afterPhoto?: string;
   note?: string;
-  source: "seed" | "user";
+  source: "seed" | "user" | "sim";
   reopened?: boolean;
   escalated?: boolean;
 }
@@ -96,6 +96,11 @@ export function localityFor(lat: number, lon: number): string {
     }
   }
   return bd < 900 ? best[0] : `near ${best[0]}`;
+}
+
+/** "in Mominpura" or "near Itwari", for sentences. */
+export function inPlace(locality: string): string {
+  return locality.startsWith("near ") ? locality : `in ${locality}`;
 }
 
 export function inPilot(lat: number, lon: number): boolean {

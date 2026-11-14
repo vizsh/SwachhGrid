@@ -4,8 +4,11 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { Map as MlMap, NavigationControl } from "@/lib/maplibre";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { AmbientLight, DirectionalLight, LightingEffect } from "@deck.gl/core";
-import { ScatterplotLayer, SolidPolygonLayer } from "@deck.gl/layers";
+import { PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from "@deck.gl/layers";
 import { HexagonLayer } from "@deck.gl/aggregation-layers";
+import { TripsLayer } from "@deck.gl/geo-layers";
+import { PathStyleExtension, type PathStyleExtensionProps } from "@deck.gl/extensions";
+import type { Layer } from "@deck.gl/core";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CloudRain, Crosshair, Pause, Play, RotateCcw, X } from "lucide-react";
@@ -29,7 +32,10 @@ import {
   priority,
 } from "@/lib/domain";
 import { DATA_ATTRIBUTION, baseStyle } from "@/lib/mapStyle";
-import { useStore, useTickets } from "@/lib/store";
+import { type FeedEvent, useStore, useTickets } from "@/lib/store";
+import { useLiveSimulation } from "@/lib/simulate";
+import { type Lane, type Van, positionAt, skippedLaneNear, useClock, useRoutes, vanDistance } from "@/lib/vans";
+import { ActivityFeed, AlertPanel, Timeline, VanPanel } from "./CommandPanels";
 import { CustodyLine, Stamp } from "./paint";
 
 const WINDOW_H = 720; // the scrubber covers the last 30 days
@@ -76,11 +82,20 @@ export default function CommandCenter() {
   // ?id=NGP-1011 opens the command centre focused on one report (deep link from the crew app or a demo script).
   const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("id"));
   const deepLinked = useRef(false);
-  const [show, setShow] = useState({ exposure: true, columns: false, resolved: false });
+  const [show, setShow] = useState({ exposure: true, columns: false, resolved: false, vans: true });
   const [rainMm, setRainMm] = useState<number | null>(null);
+  const [simulating, setSimulating] = useState(false);
+  const [vanId, setVanId] = useState<string | null>(null);
+  const [alertZone, setAlertZone] = useState<ZoneId | null>(null);
+  const [alertSent, setAlertSent] = useState<Record<string, { at: number; points: [number, number][] }>>({});
+  const feed = useStore((s) => s.feed);
+  const routes = useRoutes();
+  const clock = useClock(0.2); // live "now", refreshed every 5 s
+
+  useLiveSimulation(simulating);
 
   const live = offsetH >= WINDOW_H;
-  const at = live ? Math.max(now, ...tickets.map((t) => t.createdAt)) : now - (WINDOW_H - offsetH) * HOUR;
+  const at = live ? Math.max(clock, ...tickets.map((t) => t.createdAt)) : now - (WINDOW_H - offsetH) * HOUR;
 
   useEffect(() => void load(), [load]);
 
@@ -193,6 +208,11 @@ export default function CommandCenter() {
   }, []);
 
   const riskIndex = useMemo(() => buildRiskIndex(open, at), [open, at]);
+  const staticLayers = useRef<Layer[]>([]);
+  const animRef = useRef({ tickets, feed, alertSent, routes, showVans: show.vans, live });
+  useEffect(() => {
+    animRef.current = { tickets, feed, alertSent, routes, showVans: show.vans, live };
+  });
 
   useEffect(() => {
     if (deepLinked.current || !selected || !mapRef.current) return;
@@ -240,7 +260,7 @@ export default function CommandCenter() {
       ];
     };
 
-    const layers = [
+    const layers: (Layer | false | null)[] = [
       ...tiles.map(
         (tile) =>
           new SolidPolygonLayer<Building>({
@@ -322,22 +342,176 @@ export default function CommandCenter() {
       }),
     ].filter(Boolean);
 
-    overlay.setProps({
-      layers,
-      getTooltip: ({ object, layer }: { object?: unknown; layer?: { id: string } | null }) => {
-        if (!object || !layer) return null;
-        if (layer.id === "columns") {
-          const o = object as { count?: number; points?: unknown[] };
-          return { text: `${o.count ?? o.points?.length ?? ""} reports here in 30 days` };
-        }
-        const t = object as Ticket;
-        return { text: `${CATEGORIES[t.cat].label} · ${t.locality}` };
-      },
-    });
+    if (show.vans && routes) {
+      layers.splice(
+        tiles.length,
+        0,
+        new PathLayer<Lane>({
+          id: "lanes-driven",
+          data: routes.lanes.filter((l) => l[5]),
+          getPath: (l) => [
+            [l[0], l[1], 3],
+            [l[2], l[3], 3],
+          ],
+          getColor: [244, 241, 232, 120],
+          getWidth: 3,
+          widthMinPixels: 1.5,
+          capRounded: true,
+          parameters: { depthCompare: "always" },
+        }),
+        new PathLayer<Lane, PathStyleExtensionProps<Lane>>({
+          id: "lanes-skipped",
+          data: routes.lanes.filter((l) => !l[5]),
+          getPath: (l) => [
+            [l[0], l[1], 3],
+            [l[2], l[3], 3],
+          ],
+          getColor: [215, 55, 43, 255],
+          getWidth: 6,
+          widthMinPixels: 3,
+          getDashArray: [3, 2],
+          dashJustified: true,
+          extensions: [new PathStyleExtension({ dash: true })],
+          parameters: { depthCompare: "always" },
+          pickable: true,
+        }),
+      );
+    }
+    staticLayers.current = layers.filter((l): l is Layer => Boolean(l));
     // focus is stable enough for click handlers; re-binding on every render is unnecessary.
-  }, [tiles, riskIndex, open, scoped, show, selectedId, selected, at]);
+  }, [tiles, riskIndex, open, scoped, show, selectedId, selected, at, routes]);
+
+  /* Moving things: vans, their trails, report ripples, clean-up pulses and alert waves. ~30 fps. */
+  useEffect(() => {
+    let raf = 0;
+    let last = 0;
+    const loop = (ts: number) => {
+      raf = requestAnimationFrame(loop);
+      const overlay = overlayRef.current;
+      if (!overlay || ts - last < 33) return;
+      last = ts;
+      const t = Date.now();
+      const a = animRef.current;
+      const dyn: Layer[] = [];
+      if (a.showVans && a.routes) {
+        const vans = a.routes.vans;
+        vans.forEach((v, i) => {
+          dyn.push(
+            new TripsLayer<Van>({
+              id: `trail-${v.id}`,
+              data: [v],
+              getPath: (x) => x.path,
+              getTimestamps: (x) => x.cum,
+              currentTime: vanDistance(v, t, i),
+              trailLength: 700,
+              getColor: [242, 183, 5],
+              widthMinPixels: 5,
+              capRounded: true,
+              jointRounded: true,
+              fadeTrail: true,
+              parameters: { depthCompare: "always" },
+            }) as unknown as Layer,
+          );
+        });
+        const heads = vans.map((v, i) => ({ v, ...positionAt(v, vanDistance(v, t, i)) }));
+        dyn.push(
+          new ScatterplotLayer<(typeof heads)[number]>({
+            id: "van-heads",
+            data: heads,
+            getPosition: (h) => [h.lon, h.lat, 12],
+            getRadius: 16,
+            radiusMinPixels: 8,
+            radiusMaxPixels: 16,
+            getFillColor: [242, 183, 5, 255],
+            getLineColor: [22, 19, 15, 255],
+            stroked: true,
+            lineWidthMinPixels: 2.5,
+            parameters: { depthCompare: "always" },
+            pickable: true,
+            onClick: (i) => {
+              if (!i.object) return;
+              setSelectedId(null);
+              setAlertZone(null);
+              setVanId(i.object.v.id);
+            },
+          }) as unknown as Layer,
+          new TextLayer<(typeof heads)[number]>({
+            id: "van-labels",
+            data: heads,
+            getPosition: (h) => [h.lon, h.lat, 14],
+            getText: (h) => h.v.id,
+            getSize: 13,
+            getColor: [22, 19, 15, 255],
+            background: true,
+            getBackgroundColor: [242, 183, 5, 255],
+            backgroundPadding: [5, 2],
+            getPixelOffset: [0, -22],
+            fontFamily: "Teko, Mukta, sans-serif",
+            fontWeight: 600,
+            parameters: { depthCompare: "always" },
+          }) as unknown as Layer,
+        );
+      }
+      if (a.live) {
+        // a new report drops in: two expanding chrome rings for 6 s; a clean-up sends a green pulse
+        const fresh = a.tickets.filter((x) => t - x.createdAt < 6000 && t >= x.createdAt);
+        const cleared = a.feed.filter((e) => e.kind === "cleared" && t - e.at < 4000 && e.lat !== undefined);
+        type Ring = { lon: number; lat: number; k: number; color: [number, number, number]; reach: number };
+        const rings: Ring[] = [
+          ...fresh.flatMap((x) =>
+            [0, 0.35].map((delay): Ring => ({ lon: x.lon, lat: x.lat, k: (t - x.createdAt) / 6000 - delay, color: [242, 183, 5], reach: 140 })),
+          ),
+          ...cleared.map((e): Ring => ({ lon: e.lon as number, lat: e.lat as number, k: (t - e.at) / 4000, color: [126, 211, 168], reach: 140 })),
+          ...Object.values(a.alertSent).flatMap((al) =>
+            t - al.at < 9000
+              ? al.points.flatMap(([lon, lat]) =>
+                  [0, 0.33, 0.66].map((delay): Ring => ({ lon, lat, k: (((t - al.at) / 3000) % 1) - delay, color: [242, 183, 5], reach: 300 })),
+                )
+              : [],
+          ),
+        ].filter((r) => r.k > 0 && r.k < 1);
+        dyn.push(
+          new ScatterplotLayer<Ring>({
+            id: "ripples",
+            data: rings,
+            getPosition: (r) => [r.lon, r.lat, 4],
+            getRadius: (r) => 10 + r.k * r.reach,
+            stroked: true,
+            filled: false,
+            getLineColor: (r) => [...r.color, Math.round(255 * (1 - r.k))] as [number, number, number, number],
+            lineWidthMinPixels: 2.5,
+            parameters: { depthCompare: "always" },
+          }) as unknown as Layer,
+        );
+      }
+      overlay.setProps({
+        layers: [...staticLayers.current, ...dyn],
+        getTooltip: ({ object, layer }: { object?: unknown; layer?: { id: string } | null }) => {
+          if (!object || !layer) return null;
+          if (layer.id === "columns") {
+            const o = object as { count?: number; points?: unknown[] };
+            return { text: `${o.count ?? o.points?.length ?? ""} reports here in 30 days` };
+          }
+          if (layer.id === "van-heads") {
+            const h = object as { v: Van };
+            return { text: `Collection van ${h.v.id} · ${h.v.name}` };
+          }
+          if (layer.id === "lanes-skipped") {
+            const l = object as Lane;
+            return { text: `Lane skipped by van ${l[4]} today` };
+          }
+          const tk = object as Ticket;
+          return { text: `${CATEGORIES[tk.cat].label} · ${tk.locality}` };
+        },
+      });
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   function focus(t: Ticket) {
+    setVanId(null);
+    setAlertZone(null);
     setSelectedId(t.id);
     mapRef.current?.flyTo({
       center: [t.lon, t.lat],
@@ -348,12 +522,56 @@ export default function CommandCenter() {
       essential: true,
     });
   }
+  function pickFeed(e: FeedEvent) {
+    const t = tickets.find((x) => x.id === e.ticketId);
+    if (t) focus(t);
+    else if (e.lat !== undefined && e.lon !== undefined)
+      mapRef.current?.flyTo({ center: [e.lon, e.lat], zoom: 15.5, pitch: 55, duration: 1600 });
+  }
+  function openAlert(z: ZoneId) {
+    setSelectedId(null);
+    setVanId(null);
+    setAlertZone(z);
+  }
   function overview() {
     setSelectedId(null);
+    setVanId(null);
+    setAlertZone(null);
     mapRef.current?.flyTo({ center: PILOT_CENTER, zoom: 13.5, pitch: 54, bearing: -18, duration: 1400 });
   }
 
   const buildingCount = tiles.reduce((n, t) => n + t.data.length, 0);
+  const activeVan = routes && vanId ? (() => {
+    const index = routes.vans.findIndex((v) => v.id === vanId);
+    return index >= 0 ? { van: routes.vans[index], index } : null;
+  })() : null;
+  const alertTargets = alertZone
+    ? tickets.filter(
+        (t) =>
+          t.zone === alertZone &&
+          isOpenAt(t, at) &&
+          (t.cat === "stagnant_water" || t.cat === "blocked_drain") &&
+          ageHours(t, at) > 72,
+      )
+    : [];
+  const alertHouseholds = (() => {
+    if (!density || !alertTargets.length) return 0;
+    const cells = new Set<string>();
+    for (const t of alertTargets) {
+      const ci = Math.floor((t.lat - density.lat0) / density.cell);
+      const cj = Math.floor((t.lon - density.lon0) / density.cell);
+      for (let a = -7; a <= 7; a++)
+        for (let b = -7; b <= 7; b++) {
+          const clat = density.lat0 + (ci + a + 0.5) * density.cell;
+          const clon = density.lon0 + (cj + b + 0.5) * density.cell;
+          if (metres(t.lat, t.lon, clat, clon) <= 300) cells.add(`${ci + a}_${cj + b}`);
+        }
+    }
+    let n = 0;
+    for (const c of cells) n += density.counts[c] ?? 0;
+    return n;
+  })();
+  const feedNow = useClock(1);
   const atLabel = new Date(at).toLocaleString("en-IN", { weekday: "short", day: "numeric", month: "short", hour: "numeric" });
 
   return (
@@ -470,12 +688,22 @@ export default function CommandCenter() {
                     <span className="sign tabular text-[16px]">
                       {m.open} <span className="text-vermilion">/ {m.late}</span>
                     </span>
-                    <span className="col-start-2 col-end-4 text-[12px] text-letter/60">
-                      Breeding risk{" "}
-                      <span className={`font-bold ${m.level === "High" ? "text-vermilion" : m.level === "Watch" ? "text-chrome" : "text-letter"}`}>
-                        {m.level}
-                      </span>{" "}
-                      · {m.water} old water reports
+                    <span className="col-start-2 col-end-4 flex items-center justify-between gap-2 text-[12px] text-letter/60">
+                      <span>
+                        Breeding risk{" "}
+                        <span className={`font-bold ${m.level === "High" ? "text-vermilion" : m.level === "Watch" ? "text-chrome" : "text-letter"}`}>
+                          {m.level}
+                        </span>{" "}
+                        · {m.water} water
+                      </span>
+                      {m.level !== "Low" && (
+                        <button
+                          onClick={() => openAlert(m.z)}
+                          className={`sign rounded-[3px] px-2 pb-0 pt-1 text-[14px] ${alertSent[m.z] ? "bg-night-line text-letter/70" : "bg-chrome text-ink hover:bg-chrome-deep"}`}
+                        >
+                          {alertSent[m.z] ? "Alert sent" : "Alert"}
+                        </button>
+                      )}
                     </span>
                   </li>
                 ))}
@@ -484,7 +712,7 @@ export default function CommandCenter() {
             </div>
           </aside>
 
-          <div className="ml-auto flex min-h-0 flex-col items-end gap-3">
+          <div className="ml-auto flex min-h-0 w-[360px] max-w-[calc(100vw-24px)] flex-col items-stretch gap-3">
             {/* ---------- layer switches ---------- */}
             <div className="pointer-events-auto grain flex flex-col rounded-[6px] bg-night p-1.5 shadow-[0_14px_36px_rgb(0_0_0/0.5)]">
               <Switch on={show.exposure} onClick={() => setShow((s) => ({ ...s, exposure: !s.exposure }))}>
@@ -496,23 +724,74 @@ export default function CommandCenter() {
               <Switch on={show.resolved} onClick={() => setShow((s) => ({ ...s, resolved: !s.resolved }))}>
                 Cleared reports
               </Switch>
+              <Switch on={show.vans} onClick={() => setShow((s) => ({ ...s, vans: !s.vans }))}>
+                Collection vans
+              </Switch>
               <button onClick={overview} className="flex items-center gap-2 rounded-[3px] px-3 py-2 text-[14px] font-bold text-letter/80 hover:bg-night-line">
                 <Crosshair size={16} /> Whole pilot area
               </button>
             </div>
 
             {/* ---------- report detail ---------- */}
-            {selected && (
-              <aside className="pointer-events-auto grain flex min-h-0 w-[360px] max-w-[calc(100vw-24px)] flex-col overflow-y-auto rounded-[6px] bg-night shadow-[0_14px_36px_rgb(0_0_0/0.5)]">
+            <aside className="pointer-events-auto grain flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[6px] bg-night shadow-[0_14px_36px_rgb(0_0_0/0.5)]">
+              {selected ? (
                 <ReportDetail
                   t={selected}
                   at={at}
                   exposed={peopleExposed(density, selected)}
                   onClose={() => setSelectedId(null)}
                   onPatch={(p) => patch(selected.id, p)}
+                  routeCheck={routes && selected.cat === "missed_collection" ? skippedLaneNear(routes, selected.lat, selected.lon) : undefined}
+                  onVan={(id) => {
+                    setSelectedId(null);
+                    setVanId(id);
+                  }}
                 />
-              </aside>
-            )}
+              ) : alertZone ? (
+                <AlertPanel
+                  zone={alertZone}
+                  level={meters.find((m) => m.z === alertZone)?.level ?? "Watch"}
+                  waterReports={alertTargets}
+                  households={alertHouseholds}
+                  sentAt={alertSent[alertZone]?.at ?? null}
+                  onClose={() => setAlertZone(null)}
+                  onSend={() => {
+                    const points = alertTargets.map((t) => [t.lon, t.lat] as [number, number]);
+                    setAlertSent((m) => ({ ...m, [alertZone]: { at: Date.now(), points } }));
+                    useStore.getState().log({
+                      kind: "alert",
+                      text: `Breeding alert sent to ~${alertHouseholds.toLocaleString("en-IN")} households in ${ZONES[alertZone].name}`,
+                      zone: alertZone,
+                      lat: points[0]?.[1],
+                      lon: points[0]?.[0],
+                    });
+                    if (points.length) {
+                      const lons = points.map((p) => p[0]);
+                      const lats = points.map((p) => p[1]);
+                      mapRef.current?.fitBounds(
+                        [
+                          [Math.min(...lons) - 0.004, Math.min(...lats) - 0.004],
+                          [Math.max(...lons) + 0.004, Math.max(...lats) + 0.004],
+                        ],
+                        { pitch: 50, duration: 1500, padding: { left: 380, right: 400, top: 80, bottom: 120 } },
+                      );
+                    }
+                  }}
+                />
+              ) : activeVan && routes ? (
+                <VanPanel
+                  van={activeVan.van}
+                  index={activeVan.index}
+                  routes={routes}
+                  tickets={tickets}
+                  now={clock}
+                  onClose={() => setVanId(null)}
+                  onPick={focus}
+                />
+              ) : (
+                <ActivityFeed feed={feed} now={feedNow} simulating={simulating} onSimulate={() => setSimulating((x) => !x)} onPick={pickFeed} />
+              )}
+            </aside>
           </div>
         </div>
 
@@ -530,6 +809,16 @@ export default function CommandCenter() {
             <span className="max-sm:hidden">{playing ? "Pause" : "Replay 30 days"}</span>
           </button>
           <div className="min-w-0 flex-1">
+            <Timeline
+              tickets={scoped}
+              now={now}
+              windowH={WINDOW_H}
+              offsetH={offsetH}
+              onPick={(h) => {
+                setPlaying(false);
+                setOffsetH(h);
+              }}
+            />
             <input
               type="range"
               min={0}
@@ -596,12 +885,16 @@ function ReportDetail({
   exposed,
   onClose,
   onPatch,
+  routeCheck,
+  onVan,
 }: {
   t: Ticket;
   at: number;
   exposed: number;
   onClose: () => void;
   onPatch: (p: Partial<Ticket>) => void;
+  routeCheck?: Lane | null;
+  onVan: (id: string) => void;
 }) {
   const cat = CATEGORIES[t.cat];
   const resolved = t.status === "resolved";
@@ -612,13 +905,12 @@ function ReportDetail({
     <div className="flex flex-col gap-4 p-4">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h2 className="sign flex items-center gap-2.5 text-[34px] text-letter">
+          <h2 className="sign flex items-center gap-2.5 text-[32px] leading-none text-letter">
             <span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: `rgb(${cat.color.join(",")})` }} />
             {cat.label}
-            <span className="sign tabular ml-1 text-[18px] text-chrome">{t.id}</span>
           </h2>
-          <p className="text-[14px] text-letter/70">
-            {t.locality} · {ZONES[t.zone].name} zone (Zone {ZONES[t.zone].no})
+          <p className="mt-1 text-[14px] text-letter/70">
+            {t.locality} · {ZONES[t.zone].name}, Zone {ZONES[t.zone].no} · <span className="sign tabular text-[16px] text-chrome">{t.id}</span>
           </p>
         </div>
         <button onClick={onClose} className="rounded-[3px] p-1.5 text-letter/70 hover:bg-night-line hover:text-letter" aria-label="Close report">
@@ -626,6 +918,21 @@ function ReportDetail({
         </button>
       </div>
 
+      {routeCheck !== undefined && (
+        <div className={`rounded-[4px] px-3 py-2.5 text-[14px] ${routeCheck ? "bg-vermilion text-letter" : "bg-night-deep text-letter/80"}`}>
+          {routeCheck ? (
+            <>
+              <strong>Confirmed by route data.</strong> Van{" "}
+              <button onClick={() => onVan(routeCheck[4])} className="sign text-[17px] underline underline-offset-2">
+                {routeCheck[4]}
+              </button>{" "}
+              skipped this lane on today&apos;s round.
+            </>
+          ) : (
+            <>Route check: this lane is on a van&apos;s round today. Ask the crew to confirm the pickup.</>
+          )}
+        </div>
+      )}
       {t.photo ? (
         <div className={`relative grid gap-1.5 ${t.afterPhoto ? "grid-cols-2" : ""}`}>
           <figure>

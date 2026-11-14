@@ -3,11 +3,13 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
+  CATEGORIES,
   type Category,
   type Density,
   type SeedRow,
   type Ticket,
   hydrateSeed,
+  inPlace,
   localityFor,
   metres,
   zoneFor,
@@ -18,14 +20,36 @@ import {
  * changes is kept in this browser (localStorage) and synced across tabs. Swap this module for
  * a hosted database to make reports shared between devices.
  */
+export type FeedKind = "reported" | "assigned" | "started" | "cleared" | "escalated" | "reopened" | "metoo" | "alert";
+export interface FeedEvent {
+  id: string;
+  at: number;
+  kind: FeedKind;
+  text: string;
+  ticketId?: string;
+  zone?: string;
+  lat?: number;
+  lon?: number;
+}
+
 interface State {
   seed: Ticket[];
   density: Density | null;
   loaded: boolean;
   userTickets: Ticket[];
   patches: Record<string, Partial<Ticket>>;
+  feed: FeedEvent[];
   load: () => Promise<void>;
-  addTicket: (t: { lat: number; lon: number; cat: Category; sev: 1 | 2 | 3; photo?: string; note?: string }) => Ticket;
+  addTicket: (t: {
+    lat: number;
+    lon: number;
+    cat: Category;
+    sev: 1 | 2 | 3;
+    photo?: string;
+    note?: string;
+    source?: "user" | "sim";
+  }) => Ticket;
+  log: (e: Omit<FeedEvent, "id" | "at"> & { at?: number }) => void;
   patch: (id: string, p: Partial<Ticket>) => void;
   meToo: (id: string) => void;
   resetDemo: () => void;
@@ -39,6 +63,11 @@ export const useStore = create<State>()(
       loaded: false,
       userTickets: [],
       patches: {},
+      feed: [],
+      log: (e) =>
+        set({
+          feed: [{ ...e, at: e.at ?? Date.now(), id: Math.random().toString(36).slice(2, 9) }, ...get().feed].slice(0, 60),
+        }),
       load: async () => {
         if (get().loaded) return;
         const [seed, density] = await Promise.all([
@@ -56,12 +85,39 @@ export const useStore = create<State>()(
           meToo: 0,
           zone: zoneFor(t.lat, t.lon),
           locality: localityFor(t.lat, t.lon),
-          source: "user",
+          source: t.source ?? "user",
         };
         set({ userTickets: [...get().userTickets, ticket] });
+        get().log({
+          kind: "reported",
+          text: `${CATEGORIES[ticket.cat].label} reported ${inPlace(ticket.locality)}`,
+          ticketId: ticket.id,
+          zone: ticket.zone,
+          lat: ticket.lat,
+          lon: ticket.lon,
+        });
         return ticket;
       },
       patch: (id, p) => {
+        const before = selectTickets(get()).find((x) => x.id === id);
+        if (before) {
+          const where = { ticketId: id, zone: before.zone, lat: before.lat, lon: before.lon };
+          const label = CATEGORIES[before.cat].label;
+          if (p.status && p.status !== before.status) {
+            const kind = (
+              { assigned: before.status === "resolved" ? "reopened" : "assigned", in_progress: "started", resolved: "cleared", open: "reopened" } as const
+            )[p.status];
+            const text = {
+              assigned: `${label} ${inPlace(before.locality)} assigned to the crew`,
+              reopened: `${label} ${inPlace(before.locality)} reopened by the resident`,
+              started: `Crew started work on ${label.toLowerCase()} ${inPlace(before.locality)}`,
+              cleared: `${label} ${inPlace(before.locality)} cleared with photo proof`,
+            }[kind as "assigned" | "reopened" | "started" | "cleared"];
+            get().log({ kind, text, ...where });
+          }
+          if (p.escalated && !before.escalated)
+            get().log({ kind: "escalated", text: `${label} ${inPlace(before.locality)} escalated to the Zonal Officer`, ...where });
+        }
         if (get().userTickets.some((t) => t.id === id)) {
           set({ userTickets: get().userTickets.map((t) => (t.id === id ? { ...t, ...p } : t)) });
         } else {
@@ -70,13 +126,15 @@ export const useStore = create<State>()(
       },
       meToo: (id) => {
         const t = selectTickets(get()).find((x) => x.id === id);
-        if (t) get().patch(id, { meToo: t.meToo + 1 });
+        if (!t) return;
+        get().patch(id, { meToo: t.meToo + 1 });
+        get().log({ kind: "metoo", text: `A neighbour backed the ${CATEGORIES[t.cat].label.toLowerCase()} report ${inPlace(t.locality)}`, ticketId: id, zone: t.zone, lat: t.lat, lon: t.lon });
       },
-      resetDemo: () => set({ userTickets: [], patches: {} }),
+      resetDemo: () => set({ userTickets: [], patches: {}, feed: [] }),
     }),
     {
       name: "swachhgrid-demo-v1",
-      partialize: (s) => ({ userTickets: s.userTickets, patches: s.patches }),
+      partialize: (s) => ({ userTickets: s.userTickets.filter((t) => t.source !== "sim"), patches: s.patches, feed: s.feed.slice(0, 30) }),
     },
   ),
 );

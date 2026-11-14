@@ -7,6 +7,8 @@ import { CATEGORIES, type Ticket, ZONES, ZONE_IDS, type ZoneId, ageHours, fmtAge
 import { fileToSmallDataUrl, getPosition } from "@/lib/photo";
 import { useStore, useTickets } from "@/lib/store";
 import MiniMap from "./MiniMap";
+import { ZoneRounds } from "./VanCards";
+import { useClock, useRoutes } from "@/lib/vans";
 import { CAT_PAINT, CustodyLine, Stamp } from "./paint";
 
 const GEOFENCE_M = 50;
@@ -19,6 +21,8 @@ export default function WorkerApp() {
   const [zone, setZone] = useState<ZoneId>("gandhibagh");
   const [openId, setOpenId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("id"));
   const [now] = useState(() => Date.now());
+  const routes = useRoutes();
+  const tick = useClock(0.5);
 
   useEffect(() => void load(), [load]);
 
@@ -70,6 +74,7 @@ export default function WorkerApp() {
               </button>
             ))}
           </div>
+          <ZoneRounds routes={routes} zone={zone} now={tick} />
           <div className="flex items-end justify-between px-4 pb-2 pt-5">
             <div>
               <div className="sign tabular text-[56px] leading-none text-chrome">{jobs.length}</div>

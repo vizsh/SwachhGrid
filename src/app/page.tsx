@@ -79,6 +79,17 @@ export default function Home() {
           </div>
           <div className="absolute bottom-5 left-5 rounded-[4px] bg-ink px-3.5 py-2 text-[14px] font-bold text-letter max-sm:hidden sm:bottom-8 sm:left-8">
             Mominpura, Gandhibagh zone. Real roofs, live reports.
+            <span className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] font-semibold text-letter/75">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full border-2 border-ink bg-letter ring-1 ring-letter/40" /> open
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full bg-vermilion" /> past deadline
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-[3px] w-4 rounded-full bg-letter" /> collection van (simulated)
+              </span>
+            </span>
           </div>
         </div>
       </section>

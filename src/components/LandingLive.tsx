@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORIES, ZONES, ageHours, fmtAge, isOpenAt, isOverdue, peopleExposed, priority } from "@/lib/domain";
 import { useStore, useTickets } from "@/lib/store";
+import { positionAt, trailBehind, useClock, useRoutes, vanDistance } from "@/lib/vans";
 
 const HERO = { lon: 79.0985, lat: 21.1575 }; // Mominpura / Gandhibagh
 const Z = 16;
@@ -24,6 +25,8 @@ export function HeroMap() {
   const el = useRef<HTMLDivElement>(null);
   const [now] = useState(() => Date.now());
   const [size, setSize] = useState({ w: 0, h: 0 });
+  const routes = useRoutes();
+  const tick = useClock(15);
 
   useEffect(() => void load(), [load]);
   useEffect(() => {
@@ -58,6 +61,22 @@ export function HeroMap() {
     [tickets, now, ox, oy, size.w, size.h],
   );
 
+  const vans = (routes?.vans ?? []).flatMap((v, i) => {
+    const d = vanDistance(v, tick, i);
+    const head = positionAt(v, d);
+    const hp = project(head.lon, head.lat);
+    const x = hp.x - ox;
+    const y = hp.y - oy;
+    if (x < -40 || y < -40 || x > size.w + 40 || y > size.h + 40) return [];
+    const trail = trailBehind(v, d, 650)
+      .map(([lon, lat]) => {
+        const p = project(lon, lat);
+        return `${(p.x - ox).toFixed(1)},${(p.y - oy).toFixed(1)}`;
+      })
+      .join(" ");
+    return [{ id: v.id, x, y, trail }];
+  });
+
   return (
     <div ref={el} className="absolute inset-0 overflow-hidden bg-[#6b5a1c]">
       <svg aria-hidden width="0" height="0" className="absolute">
@@ -85,6 +104,21 @@ export function HeroMap() {
           />
         ))}
       </div>
+      <svg aria-hidden className="pointer-events-none absolute inset-0 h-full w-full">
+        {vans.map((v) => (
+          <g key={v.id}>
+            <polyline points={v.trail} fill="none" stroke="#16130f" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" opacity="0.55" />
+            <polyline points={v.trail} fill="none" stroke="#f4f1e8" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx={v.x} cy={v.y} r="9" fill="#f4f1e8" stroke="#16130f" strokeWidth="3" />
+            <g transform={`translate(${v.x + 12} ${v.y - 26})`}>
+              <rect width="42" height="20" rx="3" fill="#16130f" />
+              <text x="21" y="15" textAnchor="middle" fill="#f4f1e8" fontSize="14" fontFamily="var(--font-teko), sans-serif" letterSpacing="0.5">
+                {v.id}
+              </text>
+            </g>
+          </g>
+        ))}
+      </svg>
       <div aria-hidden className="pointer-events-none absolute inset-0">
         {dots.map(({ t, x, y }) => (
           <span
