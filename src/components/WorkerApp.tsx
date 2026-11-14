@@ -8,6 +8,7 @@ import { fileToSmallDataUrl, getPosition } from "@/lib/photo";
 import { useStore, useTickets } from "@/lib/store";
 import MiniMap from "./MiniMap";
 import { ZoneRounds } from "./VanCards";
+import { TodaysRoute } from "./CrewRoute";
 import { useClock, useRoutes } from "@/lib/vans";
 import { CAT_PAINT, CustodyLine, Stamp } from "./paint";
 
@@ -32,8 +33,11 @@ export default function WorkerApp() {
     () =>
       tickets
         .filter((t) => t.zone === zone && t.status !== "resolved")
-        .map((t) => ({ t, exposed: peopleExposed(density, t) }))
-        .sort((a, b) => priority(b.t, b.exposed, now) - priority(a.t, a.exposed, now)),
+        .map((t) => {
+          const exposed = peopleExposed(density, t);
+          return { t, exposed, score: priority(t, exposed, now) };
+        })
+        .sort((a, b) => b.score - a.score),
     [tickets, zone, density, now],
   );
   const late = jobs.filter(({ t }) => isOverdue(t, now)).length;
@@ -75,6 +79,7 @@ export default function WorkerApp() {
             ))}
           </div>
           <ZoneRounds routes={routes} zone={zone} now={tick} />
+          {density && <TodaysRoute zone={zone} jobs={jobs} now={now} onOpen={setOpenId} />}
           <div className="flex items-end justify-between px-4 pb-2 pt-5">
             <div>
               <div className="sign tabular text-[56px] leading-none text-chrome">{jobs.length}</div>

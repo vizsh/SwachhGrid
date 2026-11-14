@@ -82,6 +82,22 @@ Irregular garbage clearance, overflowing bins and blocked drains in dense urban 
 </tr>
 </table>
 
+## It works where the problem is
+
+- **Crew route of the day.** Each zone's crew gets its top jobs in the shortest order along real roads, routed over 31,133 OpenStreetMap junctions: "8 stops, 8.6 km, done by 10:23, ~5,500 people relieved", with a map, a stop list with arrival times, and one tap to start it in Google Maps. The command centre shows all three crews driving their routes.
+- **Person-days of exposure avoided.** The impact figure: for every report cleared, the people within 100 m × the days saved against a 5-day baseline. It is on the landing page, in the command-centre header and on every scorecard.
+- **Public zone scorecards.** `/ward/gandhibagh`, `/ward/lakadganj` and `/ward/ashinagar` show person-days avoided, the people still waiting, median time to clear, the share cleared within deadline, 30 days of reports and clean-ups, what is open and what is most urgent. Each can be printed for the zonal review or shared as an image.
+- **Speak the problem.** Press **बोलून सांगा** ("say it") and say "इथे गटार तुंबले आहे" ("the drain here is blocked"). The app picks Blocked drain and keeps the words as the report's note. It understands Marathi, Hindi, English and romanised phrases. Every step has a speaker button that reads it aloud, and phones without speech recognition get a type-it box with the same matcher.
+- **Works without network.** The app installs to the home screen and its pages, data and the map tiles a resident has viewed stay cached. A report filed with no signal is saved on the phone ("फोनवर जतन केली", saved on your phone) and sent by itself when the network returns.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/crew-routes.png" alt="Crew routes of the day: three zones' routes on real lanes with numbered stops"></td>
+<td width="50%"><img src="docs/images/scorecard.png" alt="Ashi Nagar public scorecard: 1.7 lakh person-days avoided, 30-day chart, what is open and most urgent"></td>
+</tr>
+</table>
+<img src="docs/images/voice-offline.jpg" alt="Resident app offline: the voice bar, the typed problem matched to Blocked drain, and the report saved on the phone">
+
 ## It plans
 
 The map also tells the city what to do next, not only what went wrong.
@@ -190,7 +206,7 @@ python scripts/export_data.py .pylib nagpur.duckdb public/data
 
 ```
 src/
-  app/                 routes: / (landing), /report, /worker, /command, /bin, /bins
+  app/                 routes: / (landing), /report, /worker, /command, /bin, /bins, /ward/[zone], manifest
   components/
     CommandCenter.tsx  3D map, queue, zone meters, detail, replay
     ReportFlow.tsx     resident three-step report, duplicates, my reports
@@ -200,6 +216,9 @@ src/
     VanCards.tsx       resident van ETA and crew van rounds
     CityPanels.tsx     bin, lane streak, planner and forecast panels
     BinPages.tsx       /bin scan page and /bins printable sticker sheet
+    CrewRoute.tsx      crew app "Today's route" card
+    WardScorecard.tsx  /ward/[zone] public scorecard
+    VoiceBar.tsx       speak-the-problem bar and read-aloud buttons
     paint.tsx          Stamp and CustodyLine, the shared signature components
     MiniMap.tsx        drag-the-map pin picker
   lib/
@@ -209,12 +228,16 @@ src/
     flood.ts           monsoon simulator: terrain lowness, drain boost, water depth
     city.ts            smart bins, lane streaks, what-if planner, hotspot forecast
     qr.ts              dependency-free QR encoder for bin stickers
+    roads.ts           road graph from OSM lanes, Dijkstra, crew route of the day
+    impact.ts          person-days avoided and zone scorecard statistics
+    voice.ts           speech input, read-aloud, Marathi/Hindi/English problem matcher
     sun.ts             sun altitude for day and night lighting
     simulate.ts        "live morning" event simulation
     buildings.ts       building tile loader and height estimate
     mapStyle.ts        satellite + OSM style
     i18n.ts            Marathi, Hindi, English strings
 scripts/               data pipeline (DuckDB) and MapLibre worker copy
+public/sw.js           offline service worker
 public/data/           exported building tiles, density grid, seeded reports
 docs/                  architecture, data, design system, demo script, roadmap
 ```

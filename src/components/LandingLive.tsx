@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CATEGORIES, ZONES, ageHours, fmtAge, isOpenAt, isOverdue, peopleExposed, priority } from "@/lib/domain";
+import Link from "next/link";
+import { CATEGORIES, DAY, ZONES, ageHours, fmtAge, isOpenAt, isOverdue, peopleExposed, priority } from "@/lib/domain";
+import { fmtBig, personDaysAvoided } from "@/lib/impact";
 import { useStore, useTickets } from "@/lib/store";
 import { positionAt, trailBehind, useClock, useRoutes, vanDistance } from "@/lib/vans";
 
@@ -142,6 +144,7 @@ export function HeroMap() {
 /** The hanging tally board: live counts painted on a night board. */
 export function Tally() {
   const load = useStore((s) => s.load);
+  const density = useStore((s) => s.density);
   const tickets = useTickets();
   const loaded = useStore((s) => s.loaded);
   const [now] = useState(() => Date.now());
@@ -150,6 +153,7 @@ export function Tally() {
     (t) => isOpenAt(t, now) || (t.source === "user" && t.status !== "resolved"),
   );
   const late = open.filter((t) => isOverdue(t, now)).length;
+  const avoided = personDaysAvoided(tickets, density, now - 30 * DAY, now);
   return (
     <div className="pinstripe grain w-[min(300px,80vw)] rounded-[6px] bg-night px-5 pb-4 pt-4 text-letter shadow-[0_18px_40px_rgb(0_0_0/0.45)] [--stripe:var(--color-chrome)] [--stripe-opacity:.55] sm:px-6 sm:pb-5 sm:pt-5">
       <div className="flex items-end justify-between gap-4">
@@ -166,7 +170,18 @@ export function Tally() {
           <div className="sign text-[19px]">past deadline</div>
         </div>
       </div>
-      <p className="mt-2 text-[12px] font-semibold text-letter/70">Demo data, three pilot zones</p>
+      {loaded && (
+        <div className="mt-3 border-t-2 border-letter/15 pt-2">
+          <div className="sign tabular text-[30px] leading-none text-leaf sm:text-[36px]">{fmtBig(avoided)}</div>
+          <div className="text-[13px] font-semibold text-letter/80">person-days of exposure avoided in 30 days</div>
+        </div>
+      )}
+      <p className="mt-2 text-[12px] font-semibold text-letter/70">
+        Demo data, three pilot zones ·{" "}
+        <Link href="/ward/gandhibagh" className="text-chrome underline underline-offset-2">
+          zone scorecards
+        </Link>
+      </p>
     </div>
   );
 }

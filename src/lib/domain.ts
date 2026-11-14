@@ -27,6 +27,8 @@ export interface Ticket {
   source: "seed" | "user" | "sim";
   reopened?: boolean;
   escalated?: boolean;
+  /** filed with no network: kept on the phone and sent when the connection returns */
+  queued?: boolean;
 }
 
 export const HOUR = 3600_000;

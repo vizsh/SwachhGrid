@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { Download, MapPin, MousePointerClick, Share2, Truck, X } from "lucide-react";
-import { ZONES, localityFor, zoneFor } from "@/lib/domain";
+import { type Ticket, ZONES, localityFor, zoneFor } from "@/lib/domain";
+import type { CrewRoute } from "@/lib/roads";
 import { BIN_EFFECT, type BinState, type Hotspot, type LaneScore, type LaneTier, TIER } from "@/lib/city";
 import type { Routes } from "@/lib/vans";
 import { FillBar, QrSvg, binUrl, fillLabel } from "./BinPages";
@@ -343,6 +344,52 @@ export function ForecastPanel({ spots, onPick, onClose }: { spots: Hotspot[]; on
       <p className="border-t-2 border-night-line px-4 py-2 text-[11px] leading-snug text-letter/50">
         A transparent heuristic, not a trained model: recent reports by kind with a 12-day decay, a bonus where reports keep coming back, skipped
         van lanes, and drains weighted up after heavy rain. The bars are the same score.
+      </p>
+    </div>
+  );
+}
+
+/* ---------------- Crew routes of the day ---------------- */
+
+export function CrewRoutesPanel({ plans, onPick, onClose }: { plans: CrewRoute[]; onPick: (t: Ticket) => void; onClose: () => void }) {
+  const km = plans.reduce((s, p) => s + p.totalM, 0) / 1000;
+  const people = plans.reduce((s, p) => s + p.people, 0);
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Head title="Crew routes of the day" sub="Each zone's top jobs, in the shortest order on real lanes" onClose={onClose} />
+      <div className="grid grid-cols-3 gap-2 p-3">
+        <Num v={`${plans.reduce((s, p) => s + p.stops.length, 0)}`} l="stops in 3 zones" />
+        <Num v={`${km.toFixed(1)} km`} l="of driving" />
+        <Num v={`~${people.toLocaleString("en-IN")}`} l="people relieved" tone="text-chrome" />
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {plans.map((p) => (
+          <section key={p.zone} className="border-t-2 border-night-line px-4 py-2.5">
+            <div className="flex items-baseline justify-between">
+              <h3 className="sign text-[20px] text-leaf">{ZONES[p.zone].name} crew</h3>
+              <span className="text-[12px] font-semibold text-letter/60">
+                {(p.totalM / 1000).toFixed(1)} km · {Math.floor(p.minutes / 60)} h {Math.round(p.minutes % 60)} min
+              </span>
+            </div>
+            <ol className="mt-1 flex flex-wrap gap-1">
+              {p.stops.map((st, i) => (
+                <li key={st.t.id}>
+                  <button
+                    onClick={() => onPick(st.t)}
+                    title={`${st.t.locality}, ~${st.exposed} people`}
+                    className="sign rounded-[3px] bg-night-line px-2 pb-0 pt-1 text-[15px] hover:bg-leaf hover:text-ink"
+                  >
+                    {i + 1} · {st.t.locality.replace("near ", "")}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          </section>
+        ))}
+      </div>
+      <p className="border-t-2 border-night-line px-4 py-2 text-[11px] leading-snug text-letter/50">
+        Jobs chosen by priority per metre of road from the zone office, then ordered by shortest road distance (2-opt) over 31,133 OSM
+        junctions. The green dot plays the plan back fast. The same route is in each crew&apos;s app.
       </p>
     </div>
   );

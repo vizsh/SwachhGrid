@@ -12,6 +12,7 @@ const Loading = () => (
 export const CommandCenterClient = dynamic(() => import("./CommandCenter"), { ssr: false, loading: Loading });
 export const ReportFlowClient = dynamic(() => import("./ReportFlow"), { ssr: false, loading: Loading });
 export const WorkerAppClient = dynamic(() => import("./WorkerApp"), { ssr: false, loading: Loading });
+export const WardScorecardClient = dynamic(() => import("./WardScorecard"), { ssr: false, loading: Loading });
 export const BinScanClient = dynamic(() => import("./BinPages").then((m) => m.BinScan), { ssr: false, loading: Loading });
 export const BinStickersClient = dynamic(() => import("./BinPages").then((m) => m.BinStickers), { ssr: false, loading: Loading });
 

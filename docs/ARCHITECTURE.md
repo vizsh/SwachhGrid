@@ -162,6 +162,33 @@ The building tiles and report dots are drawn twice: once for now and once for th
 
 `runTour` is an async script: `flyTo` with an await on `moveend`, timed captions, and the same state setters a person would use (select a report, open the van panel, turn on the simulator and raise the rain). During the van scene the animation loop moves the camera with the van. A token makes Stop end it at any point.
 
+### Road graph and crew routes
+
+[`roads.ts`](../src/lib/roads.ts) builds a routable graph in the browser from `lanes.json`. Lane coordinates are quantised to 1e-5°, so pieces that meet at an OSM node share the exact same coordinate; that becomes a node, and each pair of consecutive points becomes an edge weighted by its length. The result is 31,133 nodes, 98.6 % of them in one connected network; nodes are snapped only to that network. It builds in about 60 ms.
+
+The crew route of the day has two steps:
+
+1. **Which jobs:** from the zone office, repeatedly take the open job with the highest `priority / (road distance + 400 m)`, using Dijkstra (binary heap) from the current point, up to 8 jobs.
+2. **What order:** a road-distance matrix between the office and those jobs, a nearest-neighbour start, then 2-opt until no swap shortens the route.
+
+The path is stitched from each leg's shortest path. Time assumes 12 km/h in the lanes and 20 minutes per stop, starting at 7 am. Each zone's route takes about 100–250 ms to compute. The Google Maps link passes the stops as waypoints.
+
+### Person-days avoided
+
+```
+avoided = Σ over reports cleared in the window: people within 100 m × max(0, 5 − days it took to clear)
+```
+
+The 5-day baseline is a stated assumption for a complaint with no owner, deadline or proof, to be replaced by NMC's own historical clearing times. The scorecard also shows the people still waiting beside open reports and the person-days they have already lived there.
+
+### Voice
+
+Speech-to-text uses the browser's Web Speech API (`mr-IN`, `hi-IN`, `en-IN`), so there is no key. [`voice.ts`](../src/lib/voice.ts) matches the transcript against keyword lists per category in Devanagari and Roman script, checking the specific problems first so that "कचरा गाडी आली नाही" (the garbage van didn't come) is a missed collection and not a garbage dump. 18 of 18 test phrases match. Read-aloud uses `speechSynthesis`.
+
+### Offline
+
+[`public/sw.js`](../public/sw.js) is registered in production builds. App pages are network-first with a cached fallback; `/_next/static` and icons are cache-first; `/data/*` is stale-while-revalidate; satellite and vector tiles are cache-first, capped at 600 entries. A report filed while `navigator.onLine` is false is stored with `queued: true`; `useTickets` (the city's view) leaves queued reports out, and the `online` event runs `flushQueue`, which clears the flag and logs the report. With the shared database on the roadmap, the same flush becomes the upload.
+
 ### City data for planning
 
 [`scripts/export_city.py`](../scripts/export_city.py) cuts the 8,636 OpenStreetMap roads into 19,653 lane pieces of at most about 90 m (`public/data/lanes.json`, 590 KB, integer-quantised coordinates) and places a demo registry of 37 community bins every ~340 m along the van beats (`public/data/bins.json`), each tagged with its van and its distance along the van's loop.
@@ -210,7 +237,8 @@ The command centre's scrubber sets a virtual time `at` anywhere in the last 30 d
 
 ## Known limits
 
-- Reports sync only between tabs of one browser until a database is added.
+- Reports sync only between tabs of one browser until a database is added; the offline queue's "send" is local until then.
+- Crew routes use straight road distances and a fixed speed, not live traffic or one-way rules.
 - Zone boundaries are approximate rectangles.
 - Building heights are estimated from footprint area (under 45 m² ≈ one storey).
 - Seeded reports have no photos.

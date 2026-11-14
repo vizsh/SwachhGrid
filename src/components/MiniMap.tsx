@@ -25,11 +25,14 @@ export default function MiniMap({
   tickets,
   onCenter,
   interactive = true,
+  route,
 }: {
   center: { lat: number; lon: number };
   tickets: Ticket[];
   onCenter?: (c: { lat: number; lon: number }) => void;
   interactive?: boolean;
+  /** a road route with numbered stops; the map fits to it and the centre pin is hidden */
+  route?: { path: [number, number][]; stops: { lon: number; lat: number }[]; base: { lon: number; lat: number } };
 }) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
@@ -38,6 +41,7 @@ export default function MiniMap({
     cb.current = onCenter;
   });
   const applyRef = useRef<() => void>(() => {});
+  const routeRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     if (!el.current) return;
@@ -72,7 +76,45 @@ export default function MiniMap({
           "circle-stroke-width": 2,
         },
       });
+      map.addSource("route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+      map.addLayer({
+        id: "route-casing",
+        type: "line",
+        source: "route",
+        filter: ["==", ["geometry-type"], "LineString"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#16130F", "line-width": 9 },
+      });
+      map.addLayer({
+        id: "route-line",
+        type: "line",
+        source: "route",
+        filter: ["==", ["geometry-type"], "LineString"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: { "line-color": "#F2B705", "line-width": 5 },
+      });
+      map.addLayer({
+        id: "route-stops",
+        type: "circle",
+        source: "route",
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": 11,
+          "circle-color": ["case", ["==", ["get", "n"], "B"], "#14513A", "#F2B705"],
+          "circle-stroke-color": "#16130F",
+          "circle-stroke-width": 2.5,
+        },
+      });
+      map.addLayer({
+        id: "route-numbers",
+        type: "symbol",
+        source: "route",
+        filter: ["==", ["geometry-type"], "Point"],
+        layout: { "text-field": ["get", "n"], "text-size": 13, "text-font": ["Noto Sans Bold"], "text-allow-overlap": true },
+        paint: { "text-color": ["case", ["==", ["get", "n"], "B"], "#F4F1E8", "#16130F"] },
+      });
       applyRef.current();
+      routeRef.current();
     });
     map.on("moveend", () => {
       const c = map.getCenter();
@@ -112,6 +154,39 @@ export default function MiniMap({
     if (map.getSource("tickets")) apply();
   }, [tickets]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !route) return;
+    const apply = () => {
+      const src = map.getSource("route") as GeoJSONSource | undefined;
+      src?.setData({
+        type: "FeatureCollection",
+        features: [
+          { type: "Feature", geometry: { type: "LineString", coordinates: route.path }, properties: {} },
+          { type: "Feature", geometry: { type: "Point", coordinates: [route.base.lon, route.base.lat] }, properties: { n: "B" } },
+          ...route.stops.map((st, i) => ({
+            type: "Feature" as const,
+            geometry: { type: "Point" as const, coordinates: [st.lon, st.lat] },
+            properties: { n: String(i + 1) },
+          })),
+        ],
+      });
+      if (route.path.length > 1) {
+        const lons = route.path.map((q) => q[0]);
+        const lats = route.path.map((q) => q[1]);
+        map.fitBounds(
+          [
+            [Math.min(...lons), Math.min(...lats)],
+            [Math.max(...lons), Math.max(...lats)],
+          ],
+          { padding: 28, duration: 0 },
+        );
+      }
+    };
+    routeRef.current = apply;
+    if (map.getSource("route")) apply();
+  }, [route]);
+
   const box = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   useEffect(() => {
@@ -150,9 +225,11 @@ export default function MiniMap({
       <div className="absolute inset-0">
         <div ref={el} className="h-full w-full" />
       </div>
-      <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full drop-shadow-[0_3px_4px_rgba(0,0,0,0.6)]">
-        <MapPin size={42} className="fill-red-500 text-white" strokeWidth={1.5} />
-      </div>
+      {!route && (
+        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full drop-shadow-[0_3px_4px_rgba(0,0,0,0.6)]">
+          <MapPin size={42} className="fill-red-500 text-white" strokeWidth={1.5} />
+        </div>
+      )}
     </div>
   );
 }

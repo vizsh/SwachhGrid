@@ -41,6 +41,13 @@ Before you start: open `/command` once so the building tiles are cached, and pre
 - Turn on **Then and now** and drag the divider: "14 days ago, 23 open, 16 cleared since".
 - Turn on **Sun and night** and press **Replay 30 days**: the city goes through day and night.
 
+## 2:20 The field (`/report`, `/worker`, `/ward`)
+
+- In `/report`, press **बोलून सांगा** and say "इथे गटार तुंबले आहे". It answers "समजले: तुंबलेले गटार" ("understood: blocked drain") and moves on. Press the speaker on any step to hear it read.
+- Turn the phone to airplane mode and file a report: "फोनवर जतन केली" ("saved on your phone"). Turn the network back on and it goes through by itself.
+- In `/worker`, open **Today's route**: 8 stops on real lanes, finished by about 10:30, with one tap into Google Maps. In `/command`, turn on **Crew routes** to see all three crews.
+- Open `/ward/ashinagar`: person-days avoided, the people still waiting, and the 30-day chart. **Share as image** or **Print for the zonal review**.
+
 ## 3:00 The city plans (`/command`)
 
 - Press **What-if planner**. It flies to Mominpura: "a bin here covers 185 more homes and should cut about 5 reports a month". Drag it somewhere else and compare. Switch to **Extra van shift**, pick **AN-2**: the lanes it skipped light up green with the reports the shift would answer.

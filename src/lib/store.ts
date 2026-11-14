@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
@@ -55,6 +56,7 @@ interface State {
   patch: (id: string, p: Partial<Ticket>) => void;
   meToo: (id: string) => void;
   scanBin: (bin: { id: string; lat: number; lon: number }) => Ticket;
+  flushQueue: () => number;
   resetDemo: () => void;
 }
 
@@ -91,7 +93,10 @@ export const useStore = create<State>()(
           locality: localityFor(t.lat, t.lon),
           source: t.source ?? "user",
         };
+        // no network: keep it on the phone; it reaches the city when the connection is back
+        if (ticket.source === "user" && typeof navigator !== "undefined" && navigator.onLine === false) ticket.queued = true;
         set({ userTickets: [...get().userTickets, ticket] });
+        if (ticket.queued) return ticket;
         get().log({
           kind: "reported",
           text: `${CATEGORIES[ticket.cat].label} reported ${inPlace(ticket.locality)}`,
@@ -148,6 +153,21 @@ export const useStore = create<State>()(
         get().log({ kind: "bin", text: `Bin ${bin.id} ${inPlace(ticket.locality)} reported full by QR scan`, ticketId: ticket.id, zone: ticket.zone, lat: bin.lat, lon: bin.lon });
         return ticket;
       },
+      flushQueue: () => {
+        const queued = get().userTickets.filter((t) => t.queued);
+        if (!queued.length) return 0;
+        set({ userTickets: get().userTickets.map((t) => (t.queued ? { ...t, queued: false } : t)) });
+        for (const t of queued)
+          get().log({
+            kind: "reported",
+            text: `${CATEGORIES[t.cat].label} reported ${inPlace(t.locality)} (sent after reconnecting)`,
+            ticketId: t.id,
+            zone: t.zone,
+            lat: t.lat,
+            lon: t.lon,
+          });
+        return queued.length;
+      },
       resetDemo: () => set({ userTickets: [], patches: {}, feed: [], binScans: {} }),
     }),
     {
@@ -166,6 +186,7 @@ if (typeof window !== "undefined") {
   window.addEventListener("storage", (e) => {
     if (e.key === "swachhgrid-demo-v1") void useStore.persist.rehydrate();
   });
+  window.addEventListener("online", () => useStore.getState().flushQueue());
 }
 
 let cacheKey: unknown[] = [];
@@ -177,8 +198,15 @@ export function selectTickets(s: Pick<State, "seed" | "userTickets" | "patches">
   return cache;
 }
 
-export function useTickets(): Ticket[] {
+/** Every report, including ones still queued on this phone (the resident's own view). */
+export function useAllTickets(): Ticket[] {
   return useStore(selectTickets);
+}
+
+/** Reports the city has received: queued offline reports are not there yet. */
+export function useTickets(): Ticket[] {
+  const all = useStore(selectTickets);
+  return useMemo(() => (all.some((t) => t.queued) ? all.filter((t) => !t.queued) : all), [all]);
 }
 
 /** An open report of the same kind within 30 m counts as the same problem. */

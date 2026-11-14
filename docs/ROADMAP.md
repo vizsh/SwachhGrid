@@ -45,6 +45,9 @@ The judging reality: most teams in this problem statement will show a complaint 
 
 ---
 
+### Built since: field tools
+Crew route of the day on real roads (item 5), person-days avoided (item 3), public zone scorecards (item 11), Marathi voice reporting and read-aloud (item 7), and the offline-first installable app (item 10) are built. **Next:** live traffic and one-way rules for routes, NMC's historical clearing times as the person-days baseline, and server-side upload for the offline queue once the shared database exists.
+
 ### Built since: planning tools
 What-if planner (new bin and extra van shift), smart-bin twins with printable QR stickers and a one-tap scan page, clean-lane ribbons with a share card, and the next-week hotspot forecast are built. **Next:** real bin locations from NMC, scan data from real stickers, and a trained forecast once there are a few months of real reports.
 

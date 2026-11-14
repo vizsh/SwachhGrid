@@ -31,7 +31,9 @@ import {
   useBins,
   useLanes,
 } from "@/lib/city";
-import { BinPanel, ForecastPanel, LanePanel, LaneSummary, type PlanMode, PlannerPanel } from "./CityPanels";
+import { type CrewRoute, crewRoute, useRoadGraph } from "@/lib/roads";
+import { fmtBig, personDaysAvoided } from "@/lib/impact";
+import { BinPanel, CrewRoutesPanel, ForecastPanel, LanePanel, LaneSummary, type PlanMode, PlannerPanel } from "./CityPanels";
 import { type Building, useBuildingTiles } from "@/lib/buildings";
 import {
   CATEGORIES,
@@ -102,7 +104,7 @@ export default function CommandCenter() {
   // ?id=NGP-1011 opens the command centre focused on one report (deep link from the crew app or a demo script).
   const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("id"));
   const deepLinked = useRef(false);
-  const [show, setShow] = useState({ exposure: true, columns: false, resolved: false, vans: true, lanes: false, bins: true, forecast: false });
+  const [show, setShow] = useState({ exposure: true, columns: false, resolved: false, vans: true, lanes: false, bins: true, forecast: false, crews: false });
   const [binId, setBinId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("bin"));
   const binFlown = useRef(false);
   const [laneId, setLaneId] = useState<number | null>(null);
@@ -121,6 +123,7 @@ export default function CommandCenter() {
   const follow = useRef<{ index: number; start: number; bearing: number } | null>(null);
   const terrain = useTerrain(monsoon);
   const lanes = useLanes(show.lanes);
+  const roadGraph = useRoadGraph(show.crews);
   const bins = useBins();
   const binScans = useStore((s) => s.binScans);
   const binClock = useClock(1);
@@ -201,7 +204,8 @@ export default function CommandCenter() {
       .sort((a, b) => a - b);
     const median = done.length ? done[Math.floor(done.length / 2)] : null;
     const week = scoped.filter((t) => t.resolvedAt !== undefined && t.resolvedAt <= at && t.resolvedAt > at - 7 * DAY).length;
-    return { open: open.length, overdue, exposed, median, week };
+    const avoided7 = personDaysAvoided(scoped, density, at - 7 * DAY, at);
+    return { open: open.length, overdue, exposed, median, week, avoided7 };
   }, [open, scoped, density, at]);
 
   /* ---------- monsoon simulator ---------- */
@@ -290,6 +294,23 @@ export default function CommandCenter() {
     [show.forecast, scoped, routes, at, effRain],
   );
 
+  const crewPlans: CrewRoute[] = useMemo(() => {
+    if (!show.crews || !roadGraph || !density) return [];
+    return ZONE_IDS.map((z) =>
+      crewRoute(
+        roadGraph,
+        z,
+        tickets
+          .filter((t) => t.zone === z && isOpenAt(t, at))
+          .map((t) => {
+            const exposed = peopleExposed(density, t);
+            return { t, exposed, score: priority(t, exposed, at) };
+          })
+          .sort((a, b) => b.score - a.score),
+      ),
+    );
+  }, [show.crews, roadGraph, density, tickets, at]);
+
   /* ---------- then and now ---------- */
   const thenAt = split ? at - split.daysAgo * DAY : at;
   const openThen = useMemo(() => (split ? scoped.filter((t) => isOpenAt(t, thenAt)) : []), [split, scoped, thenAt]);
@@ -322,9 +343,9 @@ export default function CommandCenter() {
   const riskIndex = useMemo(() => buildRiskIndex(open, at), [open, at]);
   const riskThen = useMemo(() => buildRiskIndex(openThen, thenAt), [openThen, thenAt]);
   const staticLayers = useRef<Layer[]>([]);
-  const animRef = useRef({ tickets, feed, alertSent, routes, showVans: show.vans, live, flood, terrain, overflow, binsNow, fullBins, showBins: show.bins });
+  const animRef = useRef({ tickets, feed, alertSent, routes, showVans: show.vans, live, flood, terrain, overflow, binsNow, fullBins, showBins: show.bins, crewPlans });
   useEffect(() => {
-    animRef.current = { tickets, feed, alertSent, routes, showVans: show.vans, live, flood, terrain, overflow, binsNow, fullBins, showBins: show.bins };
+    animRef.current = { tickets, feed, alertSent, routes, showVans: show.vans, live, flood, terrain, overflow, binsNow, fullBins, showBins: show.bins, crewPlans };
   });
 
   const shiftKey = plan?.mode === "shift" ? plan.van : null;
@@ -665,6 +686,37 @@ export default function CommandCenter() {
           capRounded: true,
           parameters: { depthCompare: "always" },
         }),
+      show.crews &&
+        new PathLayer<CrewRoute>({
+          id: "crew-paths",
+          data: crewPlans,
+          getPath: (r) => r.path.map(([lon, lat]) => [lon, lat, 5] as [number, number, number]),
+          getColor: [126, 211, 168, 210],
+          getWidth: 7,
+          widthMinPixels: 3,
+          capRounded: true,
+          jointRounded: true,
+          parameters: { depthCompare: "always" },
+        }),
+      show.crews &&
+        new TextLayer<{ n: string; lon: number; lat: number; base: boolean }>({
+          id: "crew-stops",
+          data: crewPlans.flatMap((r) => [
+            { n: ZONES[r.zone].name.toUpperCase() + " CREW", lon: r.base.lon, lat: r.base.lat, base: true },
+            ...r.stops.map((st, i) => ({ n: String(i + 1), lon: st.t.lon, lat: st.t.lat, base: false })),
+          ]),
+          getPosition: (d) => [d.lon, d.lat, 18],
+          getText: (d) => d.n,
+          getSize: (d) => (d.base ? 13 : 15),
+          getColor: (d) => (d.base ? [244, 241, 232, 255] : [22, 19, 15, 255]),
+          background: true,
+          getBackgroundColor: (d) => (d.base ? [20, 81, 58, 255] : [126, 211, 168, 255]),
+          backgroundPadding: [6, 3],
+          getPixelOffset: [0, -16],
+          fontFamily: "Teko, Mukta, sans-serif",
+          fontWeight: 600,
+          parameters: { depthCompare: "always" },
+        }),
       dots("open", open, at, split ? { ...right, clipByInstance: true } : {}),
       split &&
         dots("open-then", openThen, thenAt, {
@@ -714,7 +766,7 @@ export default function CommandCenter() {
     }
     staticLayers.current = layers.filter((l): l is Layer => Boolean(l));
     // focus is stable enough for click handlers; re-binding on every render is unnecessary.
-  }, [tiles, riskIndex, open, scoped, show, selectedId, selected, at, routes, split, riskThen, openThen, thenAt, sunOn, dayK, scores, laneId, hotspots, plan, bins, shiftPlan]);
+  }, [tiles, riskIndex, open, scoped, show, selectedId, selected, at, routes, split, riskThen, openThen, thenAt, sunOn, dayK, scores, laneId, hotspots, plan, bins, shiftPlan, crewPlans]);
 
   /* Moving things: vans, their trails, report ripples, clean-up pulses and alert waves. ~30 fps. */
   useEffect(() => {
@@ -830,6 +882,51 @@ export default function CommandCenter() {
             dashJustified: false,
             getOffset: 0,
             extensions: [new PathStyleExtension({ dash: true })],
+            parameters: { depthCompare: "always" },
+          }) as unknown as Layer,
+        );
+      }
+      if (a.crewPlans.length) {
+        type Head = { lon: number; lat: number };
+        const heads: Head[] = [];
+        for (const r of a.crewPlans) {
+          const L = r.cum[r.cum.length - 1];
+          if (!L) continue;
+          const dist = ((t / 1000) * 45) % L; // the plan, played back fast
+          dyn.push(
+            new TripsLayer<CrewRoute>({
+              id: `crew-trail-${r.zone}`,
+              data: [r],
+              getPath: (x) => x.path,
+              getTimestamps: (x) => x.cum,
+              currentTime: dist,
+              trailLength: 500,
+              getColor: [126, 211, 168],
+              widthMinPixels: 6,
+              capRounded: true,
+              fadeTrail: true,
+              parameters: { depthCompare: "always" },
+            }) as unknown as Layer,
+          );
+          let k = 1;
+          while (k < r.cum.length - 1 && r.cum[k] < dist) k++;
+          const f = (dist - r.cum[k - 1]) / Math.max(1e-6, r.cum[k] - r.cum[k - 1]);
+          heads.push({
+            lon: r.path[k - 1][0] + (r.path[k][0] - r.path[k - 1][0]) * f,
+            lat: r.path[k - 1][1] + (r.path[k][1] - r.path[k - 1][1]) * f,
+          });
+        }
+        dyn.push(
+          new ScatterplotLayer<Head>({
+            id: "crew-heads",
+            data: heads,
+            getPosition: (h) => [h.lon, h.lat, 14],
+            getRadius: 14,
+            radiusMinPixels: 7,
+            getFillColor: [20, 81, 58, 255],
+            getLineColor: [126, 211, 168, 255],
+            stroked: true,
+            lineWidthMinPixels: 3,
             parameters: { depthCompare: "always" },
           }) as unknown as Layer,
         );
@@ -1200,7 +1297,7 @@ export default function CommandCenter() {
             <Tally label="past deadline" value={kpi.overdue} tone={kpi.overdue ? "text-vermilion" : undefined} />
             <Tally label="people beside open waste (est.)" value={kpi.exposed.toLocaleString("en-IN")} tone="text-chrome" />
             <Tally label="median time to clear" value={kpi.median === null ? "–" : fmtAge(kpi.median)} />
-            <Tally label="cleared in 7 days" value={kpi.week} />
+            <Tally label={`person-days avoided, 7 d (${kpi.week} cleared)`} value={fmtBig(kpi.avoided7)} tone="text-leaf" />
           </dl>
           <nav className="flex items-center gap-4 px-5 text-[14px] font-bold max-lg:hidden">
             <button
@@ -1316,7 +1413,17 @@ export default function CommandCenter() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-[11px] text-letter/50">Bar: open reports, red share past deadline.</p>
+              <p className="mt-2 flex items-center justify-between gap-2 text-[11px] text-letter/50">
+                Bar: open reports, red share past deadline.
+                <span className="flex gap-2 font-bold">
+                  {ZONE_IDS.map((z) => (
+                    <Link key={z} href={`/ward/${z}`} className="text-chrome hover:underline">
+                      Z{ZONES[z].no}
+                    </Link>
+                  ))}
+                  <span className="text-letter/50">scorecards</span>
+                </span>
+              </p>
             </div>
           </aside>
 
@@ -1352,6 +1459,9 @@ export default function CommandCenter() {
               </Switch>
               <Switch on={monsoon} onClick={() => setMonsoon((m) => !m)}>
                 Monsoon
+              </Switch>
+              <Switch on={show.crews} onClick={() => setShow((s) => ({ ...s, crews: !s.crews }))}>
+                Crew routes
               </Switch>
               <Switch on={sunOn} onClick={() => setSunOn((s) => !s)}>
                 Sun and night
@@ -1508,6 +1618,8 @@ export default function CommandCenter() {
                   shift={shiftPlan}
                   onClose={() => setPlan(null)}
                 />
+              ) : show.crews && crewPlans.length ? (
+                <CrewRoutesPanel plans={crewPlans} onPick={focus} onClose={() => setShow((s) => ({ ...s, crews: false }))} />
               ) : show.forecast ? (
                 <ForecastPanel
                   spots={hotspots}

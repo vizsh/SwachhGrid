@@ -6,7 +6,9 @@ import { Archive, ArrowLeft, ArrowRight, Camera, Droplets, LocateFixed, type Luc
 import { type Category, CATEGORY_IDS, type Ticket, ZONES, fmtAge, inPilot } from "@/lib/domain";
 import { type Lang, LANGS, T } from "@/lib/i18n";
 import { fileToSmallDataUrl, getPosition } from "@/lib/photo";
-import { findDuplicate, useStore, useTickets } from "@/lib/store";
+import { findDuplicate, useAllTickets, useStore, useTickets } from "@/lib/store";
+import { CloudOff } from "lucide-react";
+import { SayButton, VoiceBar } from "./VoiceBar";
 import MiniMap from "./MiniMap";
 import { VanEtaCard } from "./VanCards";
 import { useClock, useRoutes } from "@/lib/vans";
@@ -30,6 +32,21 @@ export default function ReportFlow() {
   const meToo = useStore((s) => s.meToo);
   const patch = useStore((s) => s.patch);
   const tickets = useTickets();
+  const allTickets = useAllTickets();
+  const flushQueue = useStore((s) => s.flushQueue);
+  const [online, setOnline] = useState(() => navigator.onLine);
+  const [note, setNote] = useState<string | undefined>();
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    if (navigator.onLine) flushQueue();
+    return () => {
+      window.removeEventListener("online", on);
+      window.removeEventListener("offline", off);
+    };
+  }, [flushQueue]);
 
   const [lang, setLang] = useState<Lang>("mr");
   const [step, setStep] = useState<Step>("cat");
@@ -49,8 +66,8 @@ export default function ReportFlow() {
   const tick = useClock(0.5);
 
   const openNearby = useMemo(() => tickets.filter((x) => x.status !== "resolved"), [tickets]);
-  const mine = useMemo(() => tickets.filter((x) => x.source === "user").reverse(), [tickets]);
-  const filed = tickets.find((x) => x.id === filedId) ?? null;
+  const mine = useMemo(() => allTickets.filter((x) => x.source === "user").reverse(), [allTickets]);
+  const filed = allTickets.find((x) => x.id === filedId) ?? null;
 
   async function locate() {
     const p = await getPosition();
@@ -74,12 +91,13 @@ export default function ReportFlow() {
       setStep("dup");
       return;
     }
-    setFiledId(addTicket({ lat: pos.lat, lon: pos.lon, cat, sev: 2, photo }).id);
+    setFiledId(addTicket({ lat: pos.lat, lon: pos.lon, cat, sev: 2, photo, note }).id);
     setStep("done");
   }
 
   function restart() {
     setCat(null);
+    setNote(undefined);
     setPhoto(undefined);
     setDup(null);
     setFiledId(null);
@@ -123,6 +141,11 @@ export default function ReportFlow() {
             </button>
           ))}
         </nav>
+        {!online && (
+          <p className="-mx-4 flex items-start gap-2 bg-ink px-4 py-2 text-[14px] font-semibold text-chrome">
+            <CloudOff size={18} className="mt-0.5 shrink-0" /> {t.offline}
+          </p>
+        )}
       </header>
 
       {view === "mine" ? (
@@ -154,6 +177,11 @@ export default function ReportFlow() {
                     <p className="text-[14px] text-letter/70">
                       {m.id} · {m.locality} · {fmtAge((now - m.createdAt) / 3600_000)}
                     </p>
+                    {m.queued && (
+                      <p className="mt-1 inline-flex items-center gap-1.5 rounded-[3px] bg-chrome px-2 py-0.5 text-[13px] font-bold text-ink">
+                        <CloudOff size={14} /> {t.queued}
+                      </p>
+                    )}
                   </div>
                   <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: CAT_PAINT[m.cat] }} />
                 </div>
@@ -200,7 +228,15 @@ export default function ReportFlow() {
 
           {step === "cat" && (
             <section className="p-4">
-              <h1 className={`${display} mb-5 text-[38px] leading-none`}>{t.whatProblem}</h1>
+              <h1 className={`${display} mb-4 text-[38px] leading-none`}>{t.whatProblem}</h1>
+              <VoiceBar
+                lang={lang}
+                onPick={(c, words) => {
+                  setCat(c);
+                  setNote(words);
+                  setStep("photo");
+                }}
+              />
               {/* a painted directory board: one signboard row per problem */}
               <ul className="overflow-hidden rounded-[6px] bg-ink">
                 {CATEGORY_IDS.map((c, i) => {
@@ -228,7 +264,11 @@ export default function ReportFlow() {
 
           {step === "photo" && cat && (
             <section className="flex flex-1 flex-col p-4">
-              <h1 className={`${display} text-[38px] leading-none`}>{t.cat[cat]}</h1>
+              <div className="flex items-start justify-between gap-3">
+                <h1 className={`${display} text-[38px] leading-none`}>{t.cat[cat]}</h1>
+                <SayButton lang={lang} text={`${t.cat[cat]}. ${t.photoHint}`} />
+              </div>
+              {note && <p className="mt-2 rounded-[3px] bg-ink/10 px-2 py-1 text-[15px] font-semibold">“{note}”</p>}
               <p className="mb-4 mt-2 text-[17px] font-semibold">{t.photoHint}</p>
               <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={onPhoto} className="hidden" />
               <button
@@ -268,7 +308,10 @@ export default function ReportFlow() {
           {step === "where" && cat && (
             <section className="flex flex-1 flex-col">
               <div className="px-4 pb-3 pt-4">
-                <h1 className={`${display} text-[34px] leading-none`}>{t.where}</h1>
+                <div className="flex items-start justify-between gap-3">
+                  <h1 className={`${display} text-[34px] leading-none`}>{t.where}</h1>
+                  <SayButton lang={lang} text={`${t.where}. ${t.moveMap}`} />
+                </div>
                 <p className={`mt-2 text-[16px] font-semibold ${outside ? "text-vermilion-deep" : ""}`}>{outside ? t.outside : t.moveMap}</p>
               </div>
               <div className="relative mx-4 min-h-[330px] flex-1 overflow-hidden rounded-[6px] border-[3px] border-ink">
@@ -316,8 +359,14 @@ export default function ReportFlow() {
 
           {step === "done" && filed && (
             <section className="flex flex-1 flex-col p-4">
-              <h1 className={`${display} mt-4 text-[40px] leading-none`}>{t.sent}</h1>
-              <p className="mt-2 text-[17px] font-semibold">{t.sentBody}</p>
+              <div className="mt-4 flex items-start justify-between gap-3">
+                <h1 className={`${display} text-[40px] leading-none`}>{filed.queued ? t.queued : t.sent}</h1>
+                <SayButton lang={lang} text={filed.queued ? `${t.queued}. ${t.queuedBody}` : `${t.sent}. ${t.sentBody}`} />
+              </div>
+              <p className="mt-2 flex items-start gap-2 text-[17px] font-semibold">
+                {filed.queued && <CloudOff size={20} className="mt-0.5 shrink-0" />}
+                {filed.queued ? t.queuedBody : t.sentBody}
+              </p>
               <div className="mt-6 rounded-[6px] bg-ink p-5 text-letter">
                 <div className="flex items-baseline justify-between gap-3">
                   <span className={`${display} text-[28px] leading-tight`}>{t.cat[filed.cat]}</span>

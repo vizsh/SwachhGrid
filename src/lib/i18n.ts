@@ -30,7 +30,17 @@ type Key =
   | "notCleaned"
   | "cleaned"
   | "outside"
-  | "noReports";
+  | "noReports"
+  | "speak"
+  | "listening"
+  | "heard"
+  | "notUnderstood"
+  | "listen"
+  | "typeIt"
+  | "voiceHint"
+  | "offline"
+  | "queued"
+  | "queuedBody";
 
 export const T: Record<
   Lang,
@@ -60,6 +70,16 @@ export const T: Record<
     cleaned: "साफ झाले",
     outside: "तुम्ही पायलट क्षेत्राबाहेर आहात. नकाशावर ठिकाण निवडा.",
     noReports: "अजून तक्रार नाही",
+    speak: "बोलून सांगा",
+    listening: "ऐकत आहे… समस्या सांगा",
+    heard: "समजले:",
+    notUnderstood: "समजले नाही. पुन्हा बोला किंवा खालून निवडा.",
+    listen: "ऐका",
+    typeIt: "किंवा लिहा",
+    voiceHint: "उदा. “इथे गटार तुंबले आहे”",
+    offline: "नेटवर्क नाही. तक्रार फोनवर जतन होईल आणि नेटवर्क आल्यावर पाठवली जाईल.",
+    queued: "फोनवर जतन केली",
+    queuedBody: "नेटवर्क आल्यावर ही तक्रार आपोआप पाठवली जाईल.",
     cat: {
       garbage_dump: "कचऱ्याचा ढीग",
       overflowing_bin: "कचराकुंडी भरली",
@@ -95,6 +115,16 @@ export const T: Record<
     cleaned: "सफ़ाई हो गई",
     outside: "आप पायलट क्षेत्र से बाहर हैं। नक्शे पर स्थान चुनें।",
     noReports: "अभी कोई शिकायत नहीं",
+    speak: "बोलकर बताएं",
+    listening: "सुन रहे हैं… समस्या बताइए",
+    heard: "समझ गए:",
+    notUnderstood: "समझ नहीं आया। फिर से बोलें या नीचे से चुनें।",
+    listen: "सुनें",
+    typeIt: "या लिखें",
+    voiceHint: "जैसे “यहाँ नाली जाम है”",
+    offline: "नेटवर्क नहीं है। शिकायत फ़ोन में सेव होगी और नेटवर्क आने पर भेजी जाएगी।",
+    queued: "फ़ोन में सेव हुई",
+    queuedBody: "नेटवर्क आने पर यह शिकायत अपने-आप भेज दी जाएगी।",
     cat: {
       garbage_dump: "कचरे का ढेर",
       overflowing_bin: "कूड़ेदान भरा है",
@@ -130,6 +160,16 @@ export const T: Record<
     cleaned: "It is clean",
     outside: "You are outside the pilot area. Pick the spot on the map.",
     noReports: "No reports yet",
+    speak: "Say it",
+    listening: "Listening… tell us the problem",
+    heard: "Got it:",
+    notUnderstood: "Didn't catch that. Try again or pick below.",
+    listen: "Listen",
+    typeIt: "or type it",
+    voiceHint: "e.g. “the drain here is blocked”",
+    offline: "No network. Your report will be saved on this phone and sent when the network is back.",
+    queued: "Saved on your phone",
+    queuedBody: "This report will be sent automatically when the network is back.",
     cat: {
       garbage_dump: "Garbage dump",
       overflowing_bin: "Overflowing bin",

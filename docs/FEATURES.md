@@ -34,6 +34,19 @@ Every feature below is built and runs in the deployed app unless it is marked **
 | **Then and now** | A draggable divider across the 3D city: left is 7–28 days ago, right is now. Labels count open reports on each side; reports cleared since get a green ring | One image for a review meeting: what changed | `SplitDivider` in `CommandCenter.tsx` |
 | **Play tour** | One button runs a scripted 70-second flight in eight captioned scenes, from the whole pilot area to the health alert | The demo runs itself while you talk, and cannot go wrong on stage | `runTour` in `CommandCenter.tsx` |
 
+## Built for the field
+
+| Feature | What you see | Why it matters | Where |
+|---|---|---|---|
+| **Crew route of the day** | In the crew app, a "Today's route" card: a map of the route on real lanes with numbered stops, people relieved, late jobs cleared, a finish time, the stop list with arrival times from 7 am, and **Start route in Google Maps** with all stops as waypoints | Turns the priority queue into a morning plan a crew can follow | [`roads.ts`](../src/lib/roads.ts), [`CrewRoute.tsx`](../src/components/CrewRoute.tsx) |
+| **Crew routes layer** | In the command centre, all three zones' routes in green with numbered stops, a crew dot driving each, and a panel with stops, km and people relieved | The officer sees the day's plan for the city at once | `CrewRoutesPanel` |
+| **Person-days avoided** | One number on the landing page, the command-centre header and the scorecards | An outcome, not a complaint count | [`impact.ts`](../src/lib/impact.ts) |
+| **Public zone scorecards** | `/ward/<zone>`: person-days avoided (30 and 7 days), people still waiting, median time to clear, share cleared within deadline, past deadline now, reopened, a 30-day chart, what is open, most urgent; share as a 1200 × 630 image or print | Transparency and pressure, and the page a zonal review meeting needs | [`WardScorecard.tsx`](../src/components/WardScorecard.tsx) |
+| **Speak the problem** | **बोलून सांगा** listens in Marathi, Hindi or English, shows a live waveform and transcript, says back what it understood, and moves on with the category chosen and the words kept as the note | Residents who cannot read or type much can still report | [`voice.ts`](../src/lib/voice.ts), [`VoiceBar.tsx`](../src/components/VoiceBar.tsx) |
+| **Read aloud** | A speaker button on every step reads it in the chosen language (Marathi falls back to a Hindi voice) | Low-literacy design end to end | `SayButton` |
+| **Installable, works offline** | Add to home screen; pages, data and viewed map tiles are cached; a Marathi banner says when there is no network | The lanes that need it most have the weakest signal | [`sw.js`](../public/sw.js), [`manifest.ts`](../src/app/manifest.ts) |
+| **Offline report queue** | A report filed with no network is "saved on your phone", is not visible to officers yet, and is sent by itself when the connection returns ("sent after reconnecting" in the feed) | No report is lost to a dropped connection | `flushQueue` in [`store.ts`](../src/lib/store.ts) |
+
 ## Planning tools
 
 | Feature | What you see | Why it matters | Where |
@@ -98,7 +111,6 @@ Every feature below is built and runs in the deployed app unless it is marked **
 - SMS, WhatsApp and push notifications
 - AI photo classification
 - Real bin fill sensors and real vendor van GPS (the bins and vans are simulated)
-- Offline queue for reports
 - Public ward scorecards
 
 These and more are planned in [ROADMAP.md](ROADMAP.md).
