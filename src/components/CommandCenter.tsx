@@ -3,15 +3,17 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Map as MlMap, NavigationControl } from "@/lib/maplibre";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import { AmbientLight, DirectionalLight, LightingEffect } from "@deck.gl/core";
-import { PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from "@deck.gl/layers";
+import { AmbientLight, DirectionalLight, LightingEffect, _SunLight as SunLight } from "@deck.gl/core";
+import { BitmapLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from "@deck.gl/layers";
 import { HexagonLayer } from "@deck.gl/aggregation-layers";
 import { TripsLayer } from "@deck.gl/geo-layers";
-import { PathStyleExtension, type PathStyleExtensionProps } from "@deck.gl/extensions";
+import { ClipExtension, PathStyleExtension, type PathStyleExtensionProps } from "@deck.gl/extensions";
 import type { Layer } from "@deck.gl/core";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CloudRain, Crosshair, Pause, Play, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, CloudRain, Crosshair, Film, Pause, Play, RotateCcw, Square, X } from "lucide-react";
+import { type Flood, depthAt, floodModel, useTerrain } from "@/lib/flood";
+import { daylight } from "@/lib/sun";
 import { type Building, useBuildingTiles } from "@/lib/buildings";
 import {
   CATEGORIES,
@@ -88,6 +90,14 @@ export default function CommandCenter() {
   const [vanId, setVanId] = useState<string | null>(null);
   const [alertZone, setAlertZone] = useState<ZoneId | null>(null);
   const [alertSent, setAlertSent] = useState<Record<string, { at: number; points: [number, number][] }>>({});
+  const [monsoon, setMonsoon] = useState(false);
+  const [simRain, setSimRain] = useState(80);
+  const [sunOn, setSunOn] = useState(false);
+  const [split, setSplit] = useState<{ daysAgo: number; lon: number } | null>(null);
+  const [tour, setTour] = useState<{ step: number; total: number; caption: string; sub: string } | null>(null);
+  const tourToken = useRef(0);
+  const follow = useRef<{ index: number; start: number; bearing: number } | null>(null);
+  const terrain = useTerrain(monsoon);
   const feed = useStore((s) => s.feed);
   const routes = useRoutes();
   const clock = useClock(0.2); // live "now", refreshed every 5 s
@@ -168,19 +178,54 @@ export default function CommandCenter() {
     return { open: open.length, overdue, exposed, median, week };
   }, [open, scoped, density, at]);
 
+  /* ---------- monsoon simulator ---------- */
+  const drains = useMemo(
+    () => tickets.filter((t) => isOpenAt(t, at) && (t.cat === "blocked_drain" || t.cat === "stagnant_water")),
+    [tickets, at],
+  );
+  const flood: Flood | null = useMemo(
+    () => (monsoon && terrain ? floodModel(terrain, simRain, drains) : null),
+    [monsoon, terrain, simRain, drains],
+  );
+  const overflow = useMemo(
+    () => (flood && terrain ? drains.filter((t) => depthAt(terrain, flood, t.lat, t.lon) > 0.05) : []),
+    [flood, terrain, drains],
+  );
+  const overflowIds = useMemo(() => new Set(overflow.map((t) => t.id)), [overflow]);
+  const homesInWater = useMemo(() => {
+    if (!flood || !terrain || !density) return 0;
+    let n = 0;
+    for (const [k, count] of Object.entries(density.counts)) {
+      const [i, j] = k.split("_").map(Number);
+      const lat = density.lat0 + (i + 0.5) * density.cell;
+      const lon = density.lon0 + (j + 0.5) * density.cell;
+      if (depthAt(terrain, flood, lat, lon) > 0.1) n += count;
+    }
+    return n;
+  }, [flood, terrain, density]);
+  const effRain = monsoon ? simRain : rainMm ?? 0;
+  const isWaterRisk = (t: Ticket) =>
+    (t.cat === "stagnant_water" || t.cat === "blocked_drain") && (ageHours(t, at) > 72 || overflowIds.has(t.id));
+
   /** One identical instrument per zone: load, lateness and breeding risk. */
   const meters = useMemo(() => {
-    const wet = (rainMm ?? 0) >= 5;
+    const wet = effRain >= 5;
     const rows = ZONE_IDS.map((z) => {
       const zOpen = tickets.filter((t) => t.zone === z && isOpenAt(t, at));
       const late = zOpen.filter((t) => isOverdue(t, at)).length;
-      const water = zOpen.filter((t) => (t.cat === "stagnant_water" || t.cat === "blocked_drain") && ageHours(t, at) > 72).length;
+      const water = zOpen.filter(isWaterRisk).length;
       const level = water >= 6 || (water >= 3 && wet) ? "High" : water >= 2 ? "Watch" : "Low";
       return { z, open: zOpen.length, late, water, level };
     });
     const max = Math.max(8, ...rows.map((r) => r.open));
     return rows.map((r) => ({ ...r, fill: r.open / max, lateShare: r.open ? r.late / r.open : 0 }));
-  }, [tickets, at, rainMm]);
+    // isWaterRisk depends only on at and overflowIds
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickets, at, effRain, overflowIds]);
+
+  /* ---------- then and now ---------- */
+  const thenAt = split ? at - split.daysAgo * DAY : at;
+  const openThen = useMemo(() => (split ? scoped.filter((t) => isOpenAt(t, thenAt)) : []), [split, scoped, thenAt]);
 
   /* ---------- map ---------- */
   useEffect(() => {
@@ -208,11 +253,40 @@ export default function CommandCenter() {
   }, []);
 
   const riskIndex = useMemo(() => buildRiskIndex(open, at), [open, at]);
+  const riskThen = useMemo(() => buildRiskIndex(openThen, thenAt), [openThen, thenAt]);
   const staticLayers = useRef<Layer[]>([]);
-  const animRef = useRef({ tickets, feed, alertSent, routes, showVans: show.vans, live });
+  const animRef = useRef({ tickets, feed, alertSent, routes, showVans: show.vans, live, flood, terrain, overflow });
   useEffect(() => {
-    animRef.current = { tickets, feed, alertSent, routes, showVans: show.vans, live };
+    animRef.current = { tickets, feed, alertSent, routes, showVans: show.vans, live, flood, terrain, overflow };
   });
+
+  /* ---------- sunlight: real sun angle for Nagpur at the scrubber's time ---------- */
+  const sunTs = Math.round(at / 600_000) * 600_000;
+  const dayK = sunOn ? daylight(sunTs, PILOT_CENTER[1], PILOT_CENTER[0]) : 1;
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    const map = mapRef.current;
+    if (!overlay) return;
+    const setSat = (v: number) => {
+      if (map?.getLayer("sat")) map.setPaintProperty("sat", "raster-brightness-max", v);
+    };
+    if (!sunOn) {
+      overlay.setProps({ effects: [lighting] });
+      setSat(0.72);
+      return;
+    }
+    // Walls are lit from the real sun direction. deck.gl's cast shadows are experimental and drew
+    // artifacts over 1.35 lakh roofs, so they stay off.
+    const effect = new LightingEffect({
+      ambient: new AmbientLight({
+        color: [Math.round(150 + 105 * dayK), Math.round(170 + 85 * dayK), 255],
+        intensity: 0.5 + 0.35 * dayK,
+      }),
+      sun: new SunLight({ timestamp: sunTs, color: [255, 228, 190], intensity: 2.2 * dayK }),
+    });
+    overlay.setProps({ effects: [effect] });
+    setSat(0.22 + 0.53 * dayK);
+  }, [sunOn, sunTs, dayK]);
 
   useEffect(() => {
     if (deepLinked.current || !selected || !mapRef.current) return;
@@ -228,7 +302,7 @@ export default function CommandCenter() {
     const overlay = overlayRef.current;
     if (!overlay) return;
 
-    const buildingColor = (b: Building): [number, number, number, number] => {
+    const buildingColor = (idx: RiskIndex) => (b: Building): [number, number, number, number] => {
       const base: [number, number, number, number] = b.small ? [184, 174, 152, 255] : [128, 132, 146, 255];
       if (!show.exposure) return base;
       const ci = Math.floor(b.lat / RISK_CELL);
@@ -237,7 +311,7 @@ export default function CommandCenter() {
       let days = 0;
       for (let a = -1; a <= 1; a++)
         for (let c = -1; c <= 1; c++) {
-          const list = riskIndex.get((ci + a) * 100000 + cj + c);
+          const list = idx.get((ci + a) * 100000 + cj + c);
           if (!list) continue;
           for (const t of list) {
             const d = metres(b.lat, b.lon, t.lat, t.lon);
@@ -260,21 +334,61 @@ export default function CommandCenter() {
       ];
     };
 
-    const layers: (Layer | false | null)[] = [
-      ...tiles.map(
+    // Then-and-now: the same city twice, clipped either side of a meridian the officer drags.
+    const clip = new ClipExtension();
+    const right = split ? { extensions: [clip], clipBounds: [split.lon, -90, 180, 90] as [number, number, number, number] } : {};
+    const left = split ? { extensions: [clip], clipBounds: [-180, -90, split.lon, 90] as [number, number, number, number] } : {};
+    const buildingsFor = (prefix: string, idx: RiskIndex, extra: object) =>
+      tiles.map(
         (tile) =>
           new SolidPolygonLayer<Building>({
-            id: `b-${tile.key}`,
+            id: `${prefix}-${tile.key}`,
             data: tile.data,
             getPolygon: (b) => b.ring,
             positionFormat: "XY",
             extruded: true,
             getElevation: (b) => b.h,
-            getFillColor: buildingColor,
+            getFillColor: buildingColor(idx),
             material: { ambient: 0.6, diffuse: 0.65, shininess: 6, specularColor: [30, 30, 30] },
-            updateTriggers: { getFillColor: [riskIndex, show.exposure] },
+            updateTriggers: { getFillColor: [idx, show.exposure] },
+            ...extra,
           }),
-      ),
+      );
+    const dots = (id: string, data: Ticket[], when: number, extra: object) =>
+      new ScatterplotLayer<Ticket>({
+        id,
+        data,
+        getPosition: (t) => [t.lon, t.lat, 16],
+        getRadius: (t) => 7 + t.sev * 2,
+        radiusMinPixels: 5,
+        radiusMaxPixels: 17,
+        stroked: true,
+        getFillColor: (t) => [...CATEGORIES[t.cat].color, 255] as [number, number, number, number],
+        getLineColor: (t) => (isOverdue(t, when) ? [215, 55, 43, 255] : [22, 19, 15, 255]),
+        getLineWidth: (t) => (t.id === selectedId ? 4 : isOverdue(t, when) ? 2.5 : 1.5),
+        lineWidthUnits: "pixels",
+        parameters: { depthCompare: "always" },
+        pickable: true,
+        onClick: (i) => i.object && focus(i.object),
+        updateTriggers: { getLineColor: [when], getLineWidth: [when, selectedId] },
+        ...extra,
+      });
+    const night = sunOn ? 1 - dayK : 0;
+
+    const layers: (Layer | false | null)[] = [
+      ...buildingsFor("b", riskIndex, right),
+      ...(split ? buildingsFor("then", riskThen, left) : []),
+      night > 0.3 &&
+        new ScatterplotLayer<Ticket>({
+          id: "night-glow",
+          data: open,
+          getPosition: (t) => [t.lon, t.lat, 2],
+          getRadius: 90,
+          getFillColor: [242, 183, 5, Math.round(95 * night)],
+          stroked: false,
+          parameters: { depthCompare: "always" },
+          updateTriggers: { getFillColor: [night] },
+        }),
       show.columns &&
         new HexagonLayer<Ticket>({
           id: "columns",
@@ -323,23 +437,16 @@ export default function CommandCenter() {
           lineWidthMinPixels: 2.5,
           parameters: { depthCompare: "always" },
         }),
-      new ScatterplotLayer<Ticket>({
-        id: "open",
-        data: open,
-        getPosition: (t) => [t.lon, t.lat, 16],
-        getRadius: (t) => 7 + t.sev * 2,
-        radiusMinPixels: 5,
-        radiusMaxPixels: 17,
-        stroked: true,
-        getFillColor: (t) => [...CATEGORIES[t.cat].color, 255] as [number, number, number, number],
-        getLineColor: (t) => (isOverdue(t, at) ? [215, 55, 43, 255] : [22, 19, 15, 255]),
-        getLineWidth: (t) => (t.id === selectedId ? 4 : isOverdue(t, at) ? 2.5 : 1.5),
-        lineWidthUnits: "pixels",
-        parameters: { depthCompare: "always" },
-        pickable: true,
-        onClick: (i) => i.object && focus(i.object),
-        updateTriggers: { getLineColor: [at], getLineWidth: [at, selectedId] },
-      }),
+      dots("open", open, at, split ? { ...right, clipByInstance: true } : {}),
+      split &&
+        dots("open-then", openThen, thenAt, {
+          ...left,
+          clipByInstance: true,
+          // reports open then and cleared since get a green ring: the progress the split is meant to show
+          getLineColor: (t: Ticket) => (t.resolvedAt !== undefined && t.resolvedAt <= at ? [43, 163, 120, 255] : [22, 19, 15, 255]),
+          getLineWidth: (t: Ticket) => (t.resolvedAt !== undefined && t.resolvedAt <= at ? 4 : 1.5),
+          updateTriggers: { getLineColor: [at], getLineWidth: [at] },
+        }),
     ].filter(Boolean);
 
     if (show.vans && routes) {
@@ -379,7 +486,7 @@ export default function CommandCenter() {
     }
     staticLayers.current = layers.filter((l): l is Layer => Boolean(l));
     // focus is stable enough for click handlers; re-binding on every render is unnecessary.
-  }, [tiles, riskIndex, open, scoped, show, selectedId, selected, at, routes]);
+  }, [tiles, riskIndex, open, scoped, show, selectedId, selected, at, routes, split, riskThen, openThen, thenAt, sunOn, dayK]);
 
   /* Moving things: vans, their trails, report ripples, clean-up pulses and alert waves. ~30 fps. */
   useEffect(() => {
@@ -393,6 +500,39 @@ export default function CommandCenter() {
       const t = Date.now();
       const a = animRef.current;
       const dyn: Layer[] = [];
+      if (a.flood && a.terrain) {
+        dyn.push(
+          new BitmapLayer({
+            id: "flood",
+            image: a.flood.image,
+            bounds: a.terrain.bounds,
+            opacity: 0.8 + 0.12 * Math.sin(t / 650),
+          }) as unknown as Layer,
+        );
+        type Drip = { lon: number; lat: number; k: number };
+        const drips: Drip[] = a.overflow.flatMap((d, i) =>
+          [0, 0.5].map((delay) => ({ lon: d.lon, lat: d.lat, k: (t / 2200 + i * 0.137 + delay) % 1 })),
+        );
+        dyn.push(
+          new ScatterplotLayer<Drip>({
+            id: "overflow",
+            data: drips,
+            getPosition: (r) => [r.lon, r.lat, 3],
+            getRadius: (r) => 8 + r.k * 70,
+            stroked: true,
+            filled: false,
+            getLineColor: (r) => [126, 186, 255, Math.round(255 * (1 - r.k))],
+            lineWidthMinPixels: 2.5,
+            parameters: { depthCompare: "always" },
+          }) as unknown as Layer,
+        );
+      }
+      if (follow.current && a.routes) {
+        const f = follow.current;
+        const v = a.routes.vans[f.index];
+        const head = positionAt(v, vanDistance(v, t, f.index));
+        mapRef.current?.jumpTo({ center: [head.lon, head.lat], bearing: f.bearing + (t - f.start) / 260 });
+      }
       if (a.showVans && a.routes) {
         const vans = a.routes.vans;
         vans.forEach((v, i) => {
@@ -500,6 +640,10 @@ export default function CommandCenter() {
             const l = object as Lane;
             return { text: `Lane skipped by van ${l[4]} today` };
           }
+          if (layer.id === "open-then") {
+            const tk = object as Ticket;
+            return { text: `Then: ${CATEGORIES[tk.cat].label} · ${tk.locality}` };
+          }
           const tk = object as Ticket;
           return { text: `${CATEGORIES[tk.cat].label} · ${tk.locality}` };
         },
@@ -540,19 +684,127 @@ export default function CommandCenter() {
     mapRef.current?.flyTo({ center: PILOT_CENTER, zoom: 13.5, pitch: 54, bearing: -18, duration: 1400 });
   }
 
+  function toggleSplit() {
+    if (split) return setSplit(null);
+    const map = mapRef.current;
+    setSplit({ daysAgo: 14, lon: map ? map.getCenter().lng : PILOT_CENTER[0] });
+    map?.easeTo({ bearing: 0, pitch: Math.min(map.getPitch(), 48), duration: 900 });
+  }
+
+  /* ---------- cinematic tour: a scripted 90-second flight for the projector ---------- */
+  function endTour() {
+    tourToken.current++;
+    follow.current = null;
+    setTour(null);
+    setMonsoon(false);
+    setAlertZone(null);
+    setSelectedId(null);
+    setVanId(null);
+    overview();
+  }
+
+  async function runTour() {
+    const map = mapRef.current;
+    if (!map || !routes) return;
+    const token = ++tourToken.current;
+    const alive = () => {
+      if (tourToken.current !== token) throw new Error("stopped");
+    };
+    const sleep = async (ms: number) => {
+      await new Promise((r) => setTimeout(r, ms));
+      alive();
+    };
+    const fly = async (opts: Parameters<MlMap["flyTo"]>[0]) => {
+      await new Promise<void>((r) => {
+        map.once("moveend", () => r());
+        map.flyTo({ ...opts, essential: true });
+      });
+      alive();
+    };
+    const total = 8;
+    const say = (step: number, caption: string, sub: string) => setTour({ step, total, caption, sub });
+    try {
+      setSplit(null);
+      setMonsoon(false);
+      setPlaying(false);
+      setOffsetH(WINDOW_H);
+      setSelectedId(null);
+      setVanId(null);
+      setAlertZone(null);
+      setShow((s) => ({ ...s, exposure: true, vans: true, columns: false, resolved: false }));
+
+      say(1, "1,35,721 real roofs. Three NMC zones.", "Gandhibagh, Lakadganj and Ashi Nagar, built from satellite-mapped building footprints.");
+      await fly({ center: PILOT_CENTER, zoom: 13.3, pitch: 50, bearing: -32, duration: 2500 });
+      map.easeTo({ bearing: 8, duration: 6000, easing: (x) => x });
+      await sleep(6000);
+
+      say(2, "Homes beside open waste glow.", "Mominpura, Gandhibagh zone. Yellow is fresh; red has waited three days or more.");
+      await fly({ center: [79.0985, 21.1575], zoom: 16.4, pitch: 62, bearing: -20, duration: 4000 });
+      map.easeTo({ bearing: 22, duration: 6000, easing: (x) => x });
+      await sleep(6000);
+
+      const gi = Math.max(0, routes.vans.findIndex((v) => v.id === "GB-1"));
+      const gv = routes.vans[gi];
+      const head = positionAt(gv, vanDistance(gv, Date.now() + 2500, gi));
+      say(3, "Ghanta gaadi GB-1 on its round.", "Real OpenStreetMap roads. The GPS is simulated until the vendor's feed is connected.");
+      await fly({ center: [head.lon, head.lat], zoom: 17, pitch: 64, duration: 2500 });
+      follow.current = { index: gi, start: Date.now(), bearing: map.getBearing() };
+      await sleep(9000);
+      follow.current = null;
+
+      const confirmed = tickets
+        .filter((t) => t.cat === "missed_collection" && isOpenAt(t, Date.now()))
+        .map((t) => ({ t, lane: skippedLaneNear(routes, t.lat, t.lon) }))
+        .find((x) => x.lane);
+      if (confirmed?.lane) {
+        say(4, "“The truck did not come.” The route agrees.", `Van ${confirmed.lane[4]} skipped this lane today, so the complaint is confirmed without a site visit.`);
+        focus(confirmed.t);
+        await sleep(7000);
+        say(5, "Each van lists the complaints its route confirms.", "Round progress, lanes driven and lanes skipped, for every ghanta gaadi.");
+        setSelectedId(null);
+        setVanId(confirmed.lane[4]);
+        await sleep(5500);
+        setVanId(null);
+      }
+
+      const cleared = tickets
+        .filter((t) => t.status === "resolved" && t.resolvedAt !== undefined && t.resolvedAt > Date.now() - 5 * DAY)
+        .sort((a, b) => peopleExposed(density, b) - peopleExposed(density, a))[0];
+      if (cleared) {
+        setShow((s) => ({ ...s, resolved: true }));
+        say(6, "Cleared, with proof from the spot.", "A job closes only when the after-photo is taken within 50 m. The resident can reopen it.");
+        focus(cleared);
+        await sleep(6500);
+      }
+
+      setSelectedId(null);
+      setShow((s) => ({ ...s, resolved: false }));
+      say(7, "Now add the monsoon.", "Rain pools in the low lanes first, and every blocked drain overflows into the homes around it.");
+      await fly({ center: [79.148, 21.158], zoom: 14.4, pitch: 55, bearing: -12, duration: 3000 });
+      setSimRain(0);
+      setMonsoon(true);
+      for (let r = 10; r <= 120; r += 10) {
+        await sleep(420);
+        setSimRain(r);
+      }
+      await sleep(3500);
+
+      say(8, "One tap warns the households around the water.", "In Marathi, by SMS, WhatsApp and the van's loudspeaker, before the mosquitoes breed.");
+      openAlert("ashinagar");
+      await sleep(7500);
+      endTour();
+    } catch {
+      // stopped by the presenter
+    }
+  }
+
   const buildingCount = tiles.reduce((n, t) => n + t.data.length, 0);
   const activeVan = routes && vanId ? (() => {
     const index = routes.vans.findIndex((v) => v.id === vanId);
     return index >= 0 ? { van: routes.vans[index], index } : null;
   })() : null;
   const alertTargets = alertZone
-    ? tickets.filter(
-        (t) =>
-          t.zone === alertZone &&
-          isOpenAt(t, at) &&
-          (t.cat === "stagnant_water" || t.cat === "blocked_drain") &&
-          ageHours(t, at) > 72,
-      )
+    ? tickets.filter((t) => t.zone === alertZone && isOpenAt(t, at) && isWaterRisk(t))
     : [];
   const alertHouseholds = (() => {
     if (!density || !alertTargets.length) return 0;
@@ -580,6 +832,35 @@ export default function CommandCenter() {
         <div ref={mapEl} className="h-full w-full" />
       </div>
 
+      {split && mapRef.current && (
+        <SplitDivider
+          map={mapRef.current}
+          lon={split.lon}
+          onLon={(lon) => setSplit((s) => (s ? { ...s, lon } : s))}
+          thenLabel={`${split.daysAgo} days ago · ${openThen.length} open, ${openThen.filter((t) => t.resolvedAt !== undefined && t.resolvedAt <= at).length} cleared since`}
+          nowLabel={`${live ? "Now" : atLabel} · ${open.length} open`}
+        />
+      )}
+
+      {tour && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-[150px] z-20 flex justify-center px-4">
+          <div key={tour.step} className="tour-card max-w-[760px] rounded-[4px] bg-ink/90 px-6 pb-4 pt-3 shadow-[0_18px_40px_rgb(0_0_0/0.55)]">
+            <div className="flex items-center gap-3">
+              <span className="sign rounded-[3px] bg-chrome px-2 pb-0 pt-1 text-[16px] text-ink">
+                {tour.step} / {tour.total}
+              </span>
+              <span className="flex flex-1 gap-1" aria-hidden>
+                {Array.from({ length: tour.total }, (_, i) => (
+                  <span key={i} className={`h-[4px] flex-1 rounded-full ${i < tour.step ? "bg-chrome" : "bg-letter/20"}`} />
+                ))}
+              </span>
+            </div>
+            <p className="painted mt-2 text-[30px] leading-tight text-chrome">{tour.caption}</p>
+            <p className="mt-1 text-[16px] leading-snug text-letter/85">{tour.sub}</p>
+          </div>
+        </div>
+      )}
+
       <div className="pointer-events-none absolute inset-0 z-10 flex flex-col">
         {/* ---------- top board: wordmark + one continuous tally ---------- */}
         <header className="pointer-events-auto grain flex flex-wrap items-stretch border-b-[3px] border-chrome bg-night">
@@ -603,6 +884,13 @@ export default function CommandCenter() {
             <Tally label="cleared in 7 days" value={kpi.week} />
           </dl>
           <nav className="flex items-center gap-4 px-5 text-[14px] font-bold max-lg:hidden">
+            <button
+              onClick={() => (tour ? endTour() : runTour())}
+              className={`sign flex items-center gap-2 rounded-[3px] px-3 pb-0.5 pt-1.5 text-[18px] ${tour ? "bg-vermilion text-letter" : "bg-chrome text-ink hover:bg-chrome-deep"}`}
+            >
+              {tour ? <Square size={14} fill="currentColor" /> : <Film size={16} />}
+              {tour ? "Stop tour" : "Play tour"}
+            </button>
             <Link href="/report" className="hover:text-chrome">
               Resident app
             </Link>
@@ -674,7 +962,8 @@ export default function CommandCenter() {
               <div className="mb-2 flex items-baseline justify-between">
                 <h2 className="sign text-[20px] text-chrome">Zones</h2>
                 <span className="flex items-center gap-1 text-[12px] font-semibold text-letter/60">
-                  <CloudRain size={13} /> {rainMm === null ? "rain unavailable" : `${rainMm} mm rain, last 72 h`}
+                  <CloudRain size={13} />{" "}
+                  {monsoon ? <span className="text-[#7EAADE]">{simRain} mm rain, simulated</span> : rainMm === null ? "rain unavailable" : `${rainMm} mm rain, last 72 h`}
                 </span>
               </div>
               <ul className="space-y-2">
@@ -699,7 +988,7 @@ export default function CommandCenter() {
                       {m.level !== "Low" && (
                         <button
                           onClick={() => openAlert(m.z)}
-                          className={`sign rounded-[3px] px-2 pb-0 pt-1 text-[14px] ${alertSent[m.z] ? "bg-night-line text-letter/70" : "bg-chrome text-ink hover:bg-chrome-deep"}`}
+                          className={`sign rounded-[3px] px-2 pb-0 pt-1 text-[14px] ${alertSent[m.z] ? "bg-night-line text-letter/70" : "bg-chrome text-ink hover:bg-chrome-deep"} ${m.level === "High" && !alertSent[m.z] ? "alert-pulse" : ""}`}
                         >
                           {alertSent[m.z] ? "Alert sent" : "Alert"}
                         </button>
@@ -727,6 +1016,67 @@ export default function CommandCenter() {
               <Switch on={show.vans} onClick={() => setShow((s) => ({ ...s, vans: !s.vans }))}>
                 Collection vans
               </Switch>
+              <Switch on={monsoon} onClick={() => setMonsoon((m) => !m)}>
+                Monsoon simulator
+              </Switch>
+              {monsoon && (
+                <div className="mx-1.5 mb-1.5 rounded-[4px] bg-night-deep px-3 pb-3 pt-2">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-[12px] font-semibold text-letter/60">Rain in one day</span>
+                    <span className="sign tabular text-[22px] text-[#7EAADE]">{simRain} mm</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={150}
+                    step={5}
+                    value={simRain}
+                    onChange={(e) => setSimRain(Number(e.target.value))}
+                    className="scrub rain w-full"
+                    aria-label="Simulated rainfall in millimetres"
+                  />
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <div>
+                      <div className="sign tabular text-[22px] text-letter">{terrain ? `~${(Math.round((homesInWater * PEOPLE_PER_BUILDING) / 100) * 100).toLocaleString("en-IN")}` : "…"}</div>
+                      <div className="text-[11px] leading-tight text-letter/60">people in waterlogged lanes (est.)</div>
+                    </div>
+                    <div>
+                      <div className="sign tabular text-[22px] text-[#7EAADE]">{overflow.length}</div>
+                      <div className="text-[11px] leading-tight text-letter/60">open drain and water reports now flooding</div>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px] leading-snug text-letter/50">
+                    Simulation, not a forecast: SRTM terrain lowness plus open blocked-drain reports.
+                  </p>
+                </div>
+              )}
+              <Switch on={sunOn} onClick={() => setSunOn((s) => !s)}>
+                Sun and night
+              </Switch>
+              {sunOn && (
+                <p className="mx-3 -mt-1 mb-1.5 text-[12px] text-letter/60">
+                  Real sun angle at {new Date(sunTs).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}. Scrub or replay to
+                  see day and night.
+                </p>
+              )}
+              <Switch on={!!split} onClick={toggleSplit}>
+                Then and now
+              </Switch>
+              {split && (
+                <div className="mx-3 -mt-1 mb-1.5 flex items-center gap-1 text-[12px] text-letter/60">
+                  Then:
+                  {[7, 14, 21, 28].map((d) => (
+                    <button
+                      key={d}
+                      onClick={() => setSplit((s) => (s ? { ...s, daysAgo: d } : s))}
+                      className={`sign rounded-[3px] px-2 pb-0 pt-1 text-[15px] ${split.daysAgo === d ? "bg-chrome text-ink" : "bg-night-line text-letter/80"}`}
+                    >
+                      {d}
+                    </button>
+                  ))}
+                  <span>days ago</span>
+                </div>
+              )}
               <button onClick={overview} className="flex items-center gap-2 rounded-[3px] px-3 py-2 text-[14px] font-bold text-letter/80 hover:bg-night-line">
                 <Crosshair size={16} /> Whole pilot area
               </button>
@@ -849,6 +1199,72 @@ export default function CommandCenter() {
           </div>
         </footer>
       </div>
+    </div>
+  );
+}
+
+/** The draggable then|now divider. It follows the chosen meridian as the camera moves, so it stays true in 3D. */
+function SplitDivider({
+  map,
+  lon,
+  onLon,
+  thenLabel,
+  nowLabel,
+}: {
+  map: MlMap;
+  lon: number;
+  onLon: (lon: number) => void;
+  thenLabel: string;
+  nowLabel: string;
+}) {
+  const [, setTick] = useState(0);
+  const dragging = useRef(false);
+  useEffect(() => {
+    const redraw = () => setTick((n) => n + 1);
+    map.on("move", redraw);
+    return () => {
+      map.off("move", redraw);
+    };
+  }, [map]);
+  const c = map.getContainer();
+  const w = c.clientWidth;
+  const h = c.clientHeight;
+  const topLat = map.unproject([w / 2, h * 0.12]).lat;
+  const botLat = map.unproject([w / 2, h - 10]).lat;
+  const a = map.project([lon, topLat]);
+  const b = map.project([lon, botLat]);
+  const midY = h * 0.5;
+  const mid = { x: b.y !== a.y ? a.x + ((b.x - a.x) * (midY - a.y)) / (b.y - a.y) : a.x, y: midY };
+  const move = (e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    const r = c.getBoundingClientRect();
+    onLon(map.unproject([e.clientX - r.left, e.clientY - r.top]).lng);
+  };
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[5]">
+      <svg className="absolute inset-0 h-full w-full" aria-hidden>
+        <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#16130F" strokeWidth={7} />
+        <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#F2B705" strokeWidth={3.5} />
+      </svg>
+      <div className="sign absolute rounded-[3px] bg-ink/85 px-3 pb-0.5 pt-1.5 text-[18px] text-letter" style={{ left: a.x - 12, top: a.y + 8, transform: "translateX(-100%)" }}>
+        Then · {thenLabel}
+      </div>
+      <div className="sign absolute rounded-[3px] bg-chrome px-3 pb-0.5 pt-1.5 text-[18px] text-ink" style={{ left: a.x + 12, top: a.y + 8 }}>
+        {nowLabel}
+      </div>
+      <button
+        aria-label="Drag to compare then and now"
+        className="sign pointer-events-auto absolute flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center rounded-full border-[3px] border-ink bg-chrome text-[22px] text-ink shadow-[0_8px_20px_rgb(0_0_0/0.5)]"
+        style={{ left: mid.x, top: mid.y }}
+        onPointerDown={(e) => {
+          dragging.current = true;
+          (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={move}
+        onPointerUp={() => (dragging.current = false)}
+      >
+        ⇆
+      </button>
     </div>
   );
 }

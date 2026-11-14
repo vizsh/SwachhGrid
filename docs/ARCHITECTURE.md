@@ -137,6 +137,31 @@ The store keeps a `feed` of events. `addTicket`, `patch` (status changes, escala
 
 Households reached = buildings in density cells within 300 m of the zone's old water reports, de-duplicated. Sending logs an alert event and animates three-ring waves from each water spot for nine seconds. Nothing is actually sent in the demo.
 
+### Monsoon simulator
+
+A transparent waterlogging model, not a hydraulic one. [`scripts/export_terrain.py`](../scripts/export_terrain.py) reads AWS Terrain Tiles (SRTM / NASADEM, about 30 m) for the pilot box and resamples them to a 0.00025° grid (about 27 m, 360 × 220 cells). For each cell:
+
+```
+lowness  = mean elevation within ~450 m − elevation        (smoothed twice with a 5 × 5 box)
+boost    = up to 1.4 m × (1 − d / 150 m) near each open blocked-drain or stagnant-water report
+level(R) = 3.3 m − 2.3 m × (R / 150)^0.8                   (R = rain in mm)
+depth    = lowness + boost − level(R), water where depth > 0
+```
+
+Light rain fills only the deepest hollows; heavy rain spreads along the low corridors (the Nag river's course shows up on its own); every choked drain puts water into the lanes around it. The grid ships as an 8-bit PNG (37 KB). [`flood.ts`](../src/lib/flood.ts) paints the water into a canvas drawn with a deck.gl `BitmapLayer` whose opacity shimmers in the animation loop. While the simulator is on, its rainfall replaces the live Open-Meteo figure in the breeding-risk rule, and any drain or water report standing in water counts as a water report regardless of age. People in waterlogged lanes = buildings in density cells with more than 10 cm of water × 4.5. It is labelled as a simulation, not a forecast.
+
+### Sun and night
+
+[`sun.ts`](../src/lib/sun.ts) computes the sun's altitude for Nagpur at the scrubber's time (standard low-precision solar position). A deck.gl `SunLight` lights the building walls from the real sun direction; ambient light, its colour and the satellite brightness fall with a daylight factor that ramps through dawn and dusk. At night open reports get a soft glow. deck.gl's cast shadows are experimental and drew artifacts over this many buildings, so they are off.
+
+### Then and now
+
+The building tiles and report dots are drawn twice: once for now and once for the chosen earlier time, each with its own exposure tint. deck.gl's `ClipExtension` clips the "then" layers west of a meridian and the "now" layers east of it. The divider follows that meridian through the 3D camera (projected top and bottom points), so it stays correct when the map is tilted; dragging it sets the meridian from the pointer.
+
+### Tour
+
+`runTour` is an async script: `flyTo` with an await on `moveend`, timed captions, and the same state setters a person would use (select a report, open the van panel, turn on the simulator and raise the rain). During the van scene the animation loop moves the camera with the van. A token makes Stop end it at any point.
+
 ## Time travel
 
 The command centre's scrubber sets a virtual time `at` anywhere in the last 30 days. Every model takes `at` as input (`isOpenAt`, `ageHours`, `isOverdue`, `priority`), so the map, queue, KPIs, meters and tinting all show the city as it was at that moment. Replay advances `at` by six hours every 140 ms.
@@ -157,3 +182,4 @@ The command centre's scrubber sets a virtual time `at` anywhere in the last 30 d
 - Seeded reports have no photos.
 - SMS and WhatsApp notifications are not implemented; the alert broadcast is a demo.
 - Van positions are simulated on real roads; lane coverage comes from the simulation, not real GPS.
+- The monsoon simulator uses 30 m terrain and a simple ponding rule; it shows where water collects first, not depths to trust.

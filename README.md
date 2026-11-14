@@ -66,6 +66,21 @@ Irregular garbage clearance, overflowing bins and blocked drains in dense urban 
 - **Health alert broadcast.** For a zone with high mosquito-breeding risk: households reached, the Marathi message, and waves spreading from every water spot when you press Send.
 - **Your van, on the resident's phone.** "Your ghanta gaadi GB-1 arrives in about 7 minutes", from the same shared clock as the officer's map.
 - **A 30-day timeline** of reports and clean-ups that you can click to time-travel.
+- **Monsoon simulator.** Drag a rain slider from 0 to 150 mm and water rises in the low-lying lanes, from real elevation data. Blocked drains overflow into the homes around them, breeding risk climbs zone by zone, and the Alert buttons start to pulse.
+- **Sun and night.** Buildings are lit from the real sun position over Nagpur at the scrubber's time. Replaying 30 days runs through day and night, and at night the open reports glow.
+- **Then and now.** Drag a divider across the 3D city: the left side is the city 7, 14, 21 or 28 days ago, the right side is now. Reports open then and cleared since get a green ring.
+- **Play tour.** A 70-second guided flight with captions for the projector: the city, the glowing homes, a van on its round, a complaint the route confirms, a cleared job, the monsoon, and the alert.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/monsoon.png" alt="Monsoon simulator at 140 mm: blue water along the low corridors, all zones at High breeding risk"></td>
+<td width="50%"><img src="docs/images/then-and-now.png" alt="Then and now: a divider across the 3D city, 14 days ago on the left and now on the right"></td>
+</tr>
+<tr>
+<td><img src="docs/images/tour.png" alt="Cinematic tour, scene 8: the health alert caption over the flooded map"></td>
+<td><img src="docs/images/night.png" alt="Sun and night: the city at 10 pm with open reports glowing"></td>
+</tr>
+</table>
 
 Details for each are in [docs/FEATURES.md](docs/FEATURES.md#moving-parts-what-makes-the-demo-alive). The vans are simulated on real roads, because no live van GPS is public.
 
@@ -108,7 +123,10 @@ flowchart LR
     OM[Open-Meteo rainfall] --> BW[Breeding watch]
     RT --> V[Vans, trails, skipped lanes, ETAs]
     V --> CC
+    TR[public/data/terrain.png<br/>lowness grid] --> FL[Monsoon simulator]
+    FL --> CC
   end
+  AWS[AWS Terrain Tiles<br/>SRTM elevation] -->|scripts/export_terrain.py| TR
   ESRI[Esri World Imagery] --> CC
   OFM[OpenFreeMap vector tiles<br/>OSM roads, rivers, names] --> CC
 ```
@@ -161,6 +179,8 @@ src/
     domain.ts          categories, deadlines, zones, exposure and priority models
     store.ts           Zustand store, activity feed, localStorage persistence, cross-tab sync
     vans.ts            van routes, shared clock, ETAs, skipped-lane checks
+    flood.ts           monsoon simulator: terrain lowness, drain boost, water depth
+    sun.ts             sun altitude for day and night lighting
     simulate.ts        "live morning" event simulation
     buildings.ts       building tile loader and height estimate
     mapStyle.ts        satellite + OSM style
@@ -184,6 +204,6 @@ docs/                  architecture, data, design system, demo script, roadmap
 
 ## Credits and licences
 
-Buildings © [Overture Maps Foundation](https://overturemaps.org) (Google Open Buildings, Microsoft ML Buildings, OpenStreetMap), ODbL / CDLA. Imagery © Esri, Maxar, Earthstar Geographics. Roads, rivers and place names © OpenStreetMap contributors via [OpenFreeMap](https://openfreemap.org). Rainfall from [Open-Meteo](https://open-meteo.com). Fonts: Yatra One, Teko and Mukta (SIL Open Font License).
+Buildings © [Overture Maps Foundation](https://overturemaps.org) (Google Open Buildings, Microsoft ML Buildings, OpenStreetMap), ODbL / CDLA. Imagery © Esri, Maxar, Earthstar Geographics. Roads, rivers and place names © OpenStreetMap contributors via [OpenFreeMap](https://openfreemap.org). Rainfall from [Open-Meteo](https://open-meteo.com). Elevation from [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (SRTM / NASADEM). Fonts: Yatra One, Teko and Mukta (SIL Open Font License).
 
 SwachhGrid is an independent civic project built for the YCCE Hackathon. It is not affiliated with Nagpur Municipal Corporation or Swachh Bharat Mission.

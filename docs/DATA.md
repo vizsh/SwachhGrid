@@ -12,6 +12,7 @@ SwachhGrid's rule: **show what is real, label what is estimated, and keep demo d
 | [Open-Meteo](https://open-meteo.com) | Rainfall in Nagpur over the last 72 h | CC BY 4.0 | **Real**, live |
 | OpenStreetMap roads via the Overpass API | 8,636 road segments in the pilot box, for van routes | ODbL | **Real** roads |
 | Route simulator in `scripts/export_routes.py` | Six van routes, 846 driven and 64 skipped lanes | — | **Simulated** on real roads |
+| [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (terrarium) | Elevation for the monsoon simulator, resampled to 27 m cells | Public domain (SRTM / NASADEM) | **Real** elevation, **simulated** water |
 | Seed generators in `scripts/export_data.py` and `export_routes.py` | 330 reports over 30 days, plus 12 "truck did not come" reports beside skipped lanes | — | **Seeded demo data** |
 
 ### What the building data looks like
@@ -97,7 +98,11 @@ python scripts/export_data.py .pylib nagpur.duckdb public/data
 python scripts/export_routes.py roads.json public/data
 ```
 
-Run `export_routes.py` after `export_data.py`, because it appends its seeded reports to `seed.json`.
+```bash
+python scripts/export_terrain.py public/data
+```
+
+Run `export_routes.py` after `export_data.py`, because it appends its seeded reports to `seed.json`. `export_terrain.py` needs only NumPy and Pillow and downloads 15 small PNG tiles.
 
 `fetch_buildings.py` reads only the row groups whose bounding boxes intersect Nagpur, so it downloads a few hundred MB, not the whole planet. It takes about 90 seconds on a home connection.
 

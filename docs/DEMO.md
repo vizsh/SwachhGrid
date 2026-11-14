@@ -37,6 +37,11 @@ Before you start: open `/command` once so the building tiles are cached, and pre
 - Click a **truck did not come** report beside a red lane: *Confirmed by route data: van GB-1 skipped this lane.* Click the van: its round, lanes skipped, and every complaint the route confirms.
 - In **Zones**, press **Alert** on Ashi Nagar (High). Show the Marathi message and households reached, then press **Send alert**: waves spread from each water spot and the SENT stamp lands.
 - Click a bar in the timeline above the scrubber to jump to that day.
+- Turn on **Monsoon simulator** and drag the rain from 0 to 120 mm: water fills the low lanes, drains overflow, and the zone meters turn High one by one.
+- Turn on **Then and now** and drag the divider: "14 days ago, 23 open, 16 cleared since".
+- Turn on **Sun and night** and press **Replay 30 days**: the city goes through day and night.
+
+**Short on time or on stage?** Press **Play tour** in the header: a 70-second captioned flight through all of the above. **Stop tour** ends it at any point.
 
 ## 3:30 The crew (`/worker`)
 

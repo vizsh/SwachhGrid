@@ -29,6 +29,10 @@ Every feature below is built and runs in the deployed app unless it is marked **
 | **Resident van ETA** | "Your collection van GB-1 arrives in about 7 min", with a moving marker, plus open and cleared reports within 300 m | Answers the question residents actually ask | [`VanCards.tsx`](../src/components/VanCards.tsx) |
 | **Crew van rounds** | The zone's vans with live round progress and lanes skipped | Crew and van driver coordinate | `ZoneRounds` |
 | **Landing vans** | A van drives across the Mominpura satellite with its trail; a legend explains the marks | The first screen already moves | [`LandingLive.tsx`](../src/components/LandingLive.tsx) |
+| **Monsoon simulator** | A rain slider (0–150 mm). Water rises in the low lanes from real elevation data and shimmers; open blocked drains overflow with blue rings; a counter shows people in waterlogged lanes; breeding risk turns High zone by zone and the Alert buttons pulse | Shows in one gesture why a blocked drain matters before the monsoon | [`flood.ts`](../src/lib/flood.ts), `scripts/export_terrain.py` |
+| **Sun and night** | Buildings lit from the real sun position over Nagpur at the scrubber's time; replay runs through day and night; at night the satellite dims and open reports glow | Looks spectacular on a projector, and shows which spots stay unattended after dark | [`sun.ts`](../src/lib/sun.ts) |
+| **Then and now** | A draggable divider across the 3D city: left is 7–28 days ago, right is now. Labels count open reports on each side; reports cleared since get a green ring | One image for a review meeting: what changed | `SplitDivider` in `CommandCenter.tsx` |
+| **Play tour** | One button runs a scripted 70-second flight in eight captioned scenes, from the whole pilot area to the health alert | The demo runs itself while you talk, and cannot go wrong on stage | `runTour` in `CommandCenter.tsx` |
 
 ## Resident app (`/report`)
 

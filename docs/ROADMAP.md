@@ -45,6 +45,9 @@ The judging reality: most teams in this problem statement will show a complaint 
 
 ---
 
+### Built since: visual layer for the demo
+Monsoon simulator, sun and night, then-and-now split, and the cinematic tour are built (see [FEATURES.md](FEATURES.md#moving-parts-what-makes-the-demo-alive)). **Next:** a higher-resolution terrain model (CartoDEM or a drone survey) and real drain lines for the simulator; cast shadows once deck.gl's shadow support is stable.
+
 ## Tier 2: makes it a real product
 
 ### 6. WhatsApp and missed-call reporting
