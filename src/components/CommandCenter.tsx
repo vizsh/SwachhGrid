@@ -2,18 +2,36 @@
 
 import "maplibre-gl/dist/maplibre-gl.css";
 import { Map as MlMap, NavigationControl } from "@/lib/maplibre";
+import type { MapMouseEvent } from "maplibre-gl";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import { AmbientLight, DirectionalLight, LightingEffect, _SunLight as SunLight } from "@deck.gl/core";
-import { BitmapLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from "@deck.gl/layers";
+import { BitmapLayer, ColumnLayer, PathLayer, ScatterplotLayer, SolidPolygonLayer, TextLayer } from "@deck.gl/layers";
 import { HexagonLayer } from "@deck.gl/aggregation-layers";
 import { TripsLayer } from "@deck.gl/geo-layers";
 import { ClipExtension, PathStyleExtension, type PathStyleExtensionProps } from "@deck.gl/extensions";
 import type { Layer } from "@deck.gl/core";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, CloudRain, Crosshair, Film, Pause, Play, RotateCcw, Square, X } from "lucide-react";
+import { AlertTriangle, ClipboardList, CloudRain, Crosshair, Film, Pause, Play, RotateCcw, Square, X } from "lucide-react";
 import { type Flood, depthAt, floodModel, useTerrain } from "@/lib/flood";
 import { daylight } from "@/lib/sun";
+import {
+  type BinState,
+  type Hotspot,
+  type LaneScore,
+  type LaneTier,
+  TIER,
+  binStates,
+  forecast,
+  laneScores,
+  nearestVan,
+  planBin,
+  planShift,
+  suggestBin,
+  useBins,
+  useLanes,
+} from "@/lib/city";
+import { BinPanel, ForecastPanel, LanePanel, LaneSummary, type PlanMode, PlannerPanel } from "./CityPanels";
 import { type Building, useBuildingTiles } from "@/lib/buildings";
 import {
   CATEGORIES,
@@ -84,7 +102,11 @@ export default function CommandCenter() {
   // ?id=NGP-1011 opens the command centre focused on one report (deep link from the crew app or a demo script).
   const [selectedId, setSelectedId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("id"));
   const deepLinked = useRef(false);
-  const [show, setShow] = useState({ exposure: true, columns: false, resolved: false, vans: true });
+  const [show, setShow] = useState({ exposure: true, columns: false, resolved: false, vans: true, lanes: false, bins: true, forecast: false });
+  const [binId, setBinId] = useState<string | null>(() => new URLSearchParams(window.location.search).get("bin"));
+  const binFlown = useRef(false);
+  const [laneId, setLaneId] = useState<number | null>(null);
+  const [plan, setPlan] = useState<{ mode: PlanMode; bin: { lat: number; lon: number } | null; van: string } | null>(null);
   const [rainMm, setRainMm] = useState<number | null>(null);
   const [simulating, setSimulating] = useState(false);
   const [vanId, setVanId] = useState<string | null>(null);
@@ -98,6 +120,10 @@ export default function CommandCenter() {
   const tourToken = useRef(0);
   const follow = useRef<{ index: number; start: number; bearing: number } | null>(null);
   const terrain = useTerrain(monsoon);
+  const lanes = useLanes(show.lanes);
+  const bins = useBins();
+  const binScans = useStore((s) => s.binScans);
+  const binClock = useClock(1);
   const feed = useStore((s) => s.feed);
   const routes = useRoutes();
   const clock = useClock(0.2); // live "now", refreshed every 5 s
@@ -223,6 +249,47 @@ export default function CommandCenter() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tickets, at, effRain, overflowIds]);
 
+  /* ---------- clean lanes, smart bins, planner, forecast ---------- */
+  const scores: LaneScore[] = useMemo(() => (show.lanes && lanes ? laneScores(lanes, tickets, at) : []), [show.lanes, lanes, tickets, at]);
+  const tierCounts = useMemo(() => {
+    const c = { dirty: 0, watching: 0, week: 0, fortnight: 0, three: 0 } as Record<LaneTier, number>;
+    for (const sc of scores) c[sc.tier]++;
+    return c;
+  }, [scores]);
+  const laneScore = laneId === null ? null : (scores.find((x) => x.lane.i === laneId) ?? null);
+  const binsNow: BinState[] = useMemo(
+    () => (bins && routes ? binStates(bins, routes, density, binScans, binClock) : []),
+    [bins, routes, density, binScans, binClock],
+  );
+  const activeBin = binsNow.find((b) => b.bin.id === binId) ?? null;
+  useEffect(() => {
+    if (binFlown.current || !activeBin || !mapRef.current) return;
+    binFlown.current = true;
+    const map = mapRef.current;
+    const fly = () => map.flyTo({ center: [activeBin.bin.lon, activeBin.bin.lat], zoom: 16.4, pitch: 60, bearing: -20, duration: 1600 });
+    if (map.loaded()) fly();
+    else map.once("load", fly);
+  }, [activeBin]);
+  const fullBins = useMemo(
+    () => (routes ? binsNow.filter((b) => b.fill >= 0.9).map((b) => ({ b, v: nearestVan(routes, b.bin.lat, b.bin.lon, binClock) })) : []),
+    [binsNow, routes, binClock],
+  );
+  const binPlan = useMemo(
+    () => (plan?.mode === "bin" && plan.bin && bins ? planBin(plan.bin, bins, density, tickets, at) : null),
+    [plan, bins, density, tickets, at],
+  );
+  const shiftPlan = useMemo(() => {
+    if (plan?.mode !== "shift" || !routes) return null;
+    const confirmed = tickets.filter(
+      (t) => t.cat === "missed_collection" && isOpenAt(t, at) && skippedLaneNear(routes, t.lat, t.lon)?.[4] === plan.van,
+    ).length;
+    return planShift(plan.van, routes, density, confirmed);
+  }, [plan, routes, density, tickets, at]);
+  const hotspots: Hotspot[] = useMemo(
+    () => (show.forecast ? forecast(scoped, routes ? routes.lanes.filter((l) => !l[5]) : [], at, effRain) : []),
+    [show.forecast, scoped, routes, at, effRain],
+  );
+
   /* ---------- then and now ---------- */
   const thenAt = split ? at - split.daysAgo * DAY : at;
   const openThen = useMemo(() => (split ? scoped.filter((t) => isOpenAt(t, thenAt)) : []), [split, scoped, thenAt]);
@@ -255,10 +322,74 @@ export default function CommandCenter() {
   const riskIndex = useMemo(() => buildRiskIndex(open, at), [open, at]);
   const riskThen = useMemo(() => buildRiskIndex(openThen, thenAt), [openThen, thenAt]);
   const staticLayers = useRef<Layer[]>([]);
-  const animRef = useRef({ tickets, feed, alertSent, routes, showVans: show.vans, live, flood, terrain, overflow });
+  const animRef = useRef({ tickets, feed, alertSent, routes, showVans: show.vans, live, flood, terrain, overflow, binsNow, fullBins, showBins: show.bins });
   useEffect(() => {
-    animRef.current = { tickets, feed, alertSent, routes, showVans: show.vans, live, flood, terrain, overflow };
+    animRef.current = { tickets, feed, alertSent, routes, showVans: show.vans, live, flood, terrain, overflow, binsNow, fullBins, showBins: show.bins };
   });
+
+  const shiftKey = plan?.mode === "shift" ? plan.van : null;
+  useEffect(() => {
+    if (!shiftKey || !routes) return;
+    const ls = routes.lanes.filter((l) => !l[5] && l[4] === shiftKey);
+    if (!ls.length) return;
+    const lons = ls.flatMap((l) => [l[0], l[2]]);
+    const lats = ls.flatMap((l) => [l[1], l[3]]);
+    mapRef.current?.fitBounds(
+      [
+        [Math.min(...lons) - 0.002, Math.min(...lats) - 0.002],
+        [Math.max(...lons) + 0.002, Math.max(...lats) + 0.002],
+      ],
+      { pitch: 50, duration: 1400, padding: { left: 380, right: 400, top: 90, bottom: 140 } },
+    );
+  }, [shiftKey, routes]);
+
+  /* Planner: click to place the proposed bin, drag it to move it. */
+  const planRef = useRef(plan);
+  useEffect(() => {
+    planRef.current = plan;
+  });
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    let dragging = false;
+    const near = (e: { point: { x: number; y: number } }) => {
+      const p = planRef.current;
+      if (p?.mode !== "bin" || !p.bin) return false;
+      const q = map.project([p.bin.lon, p.bin.lat]);
+      return Math.hypot(q.x - e.point.x, q.y - e.point.y) < 30;
+    };
+    const place = (e: { lngLat: { lng: number; lat: number } }) =>
+      setPlan((p) => (p?.mode === "bin" ? { ...p, bin: { lat: e.lngLat.lat, lon: e.lngLat.lng } } : p));
+    const down = (e: MapMouseEvent) => {
+      if (!near(e)) return;
+      dragging = true;
+      map.dragPan.disable();
+      map.getCanvas().style.cursor = "grabbing";
+    };
+    const move = (e: MapMouseEvent) => {
+      if (dragging) place(e);
+      else map.getCanvas().style.cursor = near(e) ? "grab" : planRef.current?.mode === "bin" ? "crosshair" : "";
+    };
+    const up = () => {
+      if (!dragging) return;
+      dragging = false;
+      map.dragPan.enable();
+      map.getCanvas().style.cursor = "";
+    };
+    const click = (e: MapMouseEvent) => {
+      if (planRef.current?.mode === "bin" && !near(e)) place(e);
+    };
+    map.on("mousedown", down);
+    map.on("mousemove", move);
+    map.on("mouseup", up);
+    map.on("click", click);
+    return () => {
+      map.off("mousedown", down);
+      map.off("mousemove", move);
+      map.off("mouseup", up);
+      map.off("click", click);
+    };
+  }, []);
 
   /* ---------- sunlight: real sun angle for Nagpur at the scrubber's time ---------- */
   const sunTs = Math.round(at / 600_000) * 600_000;
@@ -437,6 +568,103 @@ export default function CommandCenter() {
           lineWidthMinPixels: 2.5,
           parameters: { depthCompare: "always" },
         }),
+      show.lanes &&
+        new PathLayer<LaneScore>({
+          id: "ribbons",
+          data: scores,
+          getPath: (x) => x.lane.path.map(([lon, lat]) => [lon, lat, 2] as [number, number, number]),
+          getColor: (x) => [...TIER[x.tier].color, 235] as [number, number, number, number],
+          getWidth: (x) => (x.lane.i === laneId ? 14 : 8),
+          widthMinPixels: 3,
+          capRounded: true,
+          jointRounded: true,
+          pickable: true,
+          onClick: (i) => {
+            if (!i.object) return;
+            setSelectedId(null);
+            setVanId(null);
+            setAlertZone(null);
+            setBinId(null);
+            setLaneId(i.object.lane.i);
+          },
+          updateTriggers: { getWidth: [laneId] },
+        }),
+      show.forecast &&
+        new ColumnLayer<Hotspot>({
+          id: "forecast",
+          data: hotspots,
+          getPosition: (h) => [h.lon, h.lat],
+          diskResolution: 4,
+          angle: 45,
+          radius: 42,
+          extruded: true,
+          getElevation: (h) => h.likelihood * 320,
+          getFillColor: (h) => {
+            const k = Math.min(1, Math.max(0, (h.likelihood - 0.3) / 0.6));
+            return [242 + (215 - 242) * k, 183 + (55 - 183) * k, 5 + (43 - 5) * k, 225];
+          },
+          material: { ambient: 0.7, diffuse: 0.6 },
+          pickable: true,
+          onClick: (i) => i.object && mapRef.current?.flyTo({ center: [i.object.lon, i.object.lat], zoom: 16.5, pitch: 60, duration: 1500 }),
+          transitions: { getElevation: { duration: 1400, enter: () => [0] } },
+        }),
+      plan?.mode === "bin" &&
+        bins &&
+        new ScatterplotLayer({
+          id: "bin-reach",
+          data: bins,
+          getPosition: (b: { lon: number; lat: number }) => [b.lon, b.lat, 1],
+          getRadius: 100,
+          filled: true,
+          stroked: true,
+          getFillColor: [244, 241, 232, 28],
+          getLineColor: [244, 241, 232, 170],
+          lineWidthMinPixels: 1.5,
+          parameters: { depthCompare: "always" },
+        }),
+      plan?.mode === "bin" &&
+        plan.bin &&
+        new ScatterplotLayer({
+          id: "plan-bin-reach",
+          data: [plan.bin],
+          getPosition: (b: { lon: number; lat: number }) => [b.lon, b.lat, 1],
+          getRadius: 100,
+          filled: true,
+          stroked: true,
+          getFillColor: [242, 183, 5, 60],
+          getLineColor: [242, 183, 5, 255],
+          lineWidthMinPixels: 3,
+          parameters: { depthCompare: "always" },
+        }),
+      plan?.mode === "bin" &&
+        plan.bin &&
+        new ColumnLayer({
+          id: "plan-bin",
+          data: [plan.bin],
+          getPosition: (b: { lon: number; lat: number }) => [b.lon, b.lat],
+          radius: 9,
+          diskResolution: 20,
+          extruded: true,
+          getElevation: 30,
+          getFillColor: [242, 183, 5, 255],
+          getLineColor: [22, 19, 15, 255],
+          material: { ambient: 0.8, diffuse: 0.5 },
+        }),
+      plan?.mode === "shift" &&
+        shiftPlan &&
+        new PathLayer<Lane>({
+          id: "shift-lanes",
+          data: shiftPlan.lanes,
+          getPath: (l) => [
+            [l[0], l[1], 4],
+            [l[2], l[3], 4],
+          ],
+          getColor: [126, 211, 168, 255],
+          getWidth: 12,
+          widthMinPixels: 5,
+          capRounded: true,
+          parameters: { depthCompare: "always" },
+        }),
       dots("open", open, at, split ? { ...right, clipByInstance: true } : {}),
       split &&
         dots("open-then", openThen, thenAt, {
@@ -486,7 +714,7 @@ export default function CommandCenter() {
     }
     staticLayers.current = layers.filter((l): l is Layer => Boolean(l));
     // focus is stable enough for click handlers; re-binding on every render is unnecessary.
-  }, [tiles, riskIndex, open, scoped, show, selectedId, selected, at, routes, split, riskThen, openThen, thenAt, sunOn, dayK]);
+  }, [tiles, riskIndex, open, scoped, show, selectedId, selected, at, routes, split, riskThen, openThen, thenAt, sunOn, dayK, scores, laneId, hotspots, plan, bins, shiftPlan]);
 
   /* Moving things: vans, their trails, report ripples, clean-up pulses and alert waves. ~30 fps. */
   useEffect(() => {
@@ -523,6 +751,85 @@ export default function CommandCenter() {
             filled: false,
             getLineColor: (r) => [126, 186, 255, Math.round(255 * (1 - r.k))],
             lineWidthMinPixels: 2.5,
+            parameters: { depthCompare: "always" },
+          }) as unknown as Layer,
+        );
+      }
+      if (a.showBins && a.binsNow.length) {
+        const pulse = 0.5 + 0.5 * Math.sin(t / 260);
+        dyn.push(
+          new ColumnLayer<BinState>({
+            id: "bins",
+            data: a.binsNow,
+            getPosition: (b) => [b.bin.lon, b.bin.lat],
+            radius: 16,
+            radiusUnits: "meters",
+            diskResolution: 16,
+            extruded: true,
+            getElevation: (b) => 10 + Math.min(1.3, b.fill) * 70,
+            getFillColor: (b) =>
+              b.fill >= 1
+                ? [215, 55, 43, 160 + 95 * pulse]
+                : b.fill >= 0.9
+                  ? [217, 154, 0, 255]
+                  : b.fill >= 0.6
+                    ? [242, 183, 5, 255]
+                    : [126, 211, 168, 255],
+            material: { ambient: 0.75, diffuse: 0.55 },
+            pickable: true,
+            onClick: (i) => {
+              if (!i.object) return;
+              setSelectedId(null);
+              setVanId(null);
+              setAlertZone(null);
+              setLaneId(null);
+              setBinId(i.object.bin.id);
+              mapRef.current?.flyTo({ center: [i.object.bin.lon, i.object.bin.lat], zoom: 16.6, pitch: 60, duration: 1500 });
+            },
+          }) as unknown as Layer,
+        );
+        dyn.push(
+          new ScatterplotLayer<BinState>({
+            id: "bin-dots",
+            data: a.binsNow,
+            getPosition: (b) => [b.bin.lon, b.bin.lat, 2],
+            getRadius: 10,
+            radiusMinPixels: 4.5,
+            radiusMaxPixels: 9,
+            stroked: true,
+            lineWidthMinPixels: 1.5,
+            getLineColor: [22, 19, 15, 255],
+            getFillColor: (b) => (b.fill >= 1 ? [215, 55, 43, 255] : b.fill >= 0.9 ? [217, 154, 0, 255] : b.fill >= 0.6 ? [242, 183, 5, 255] : [126, 211, 168, 255]),
+            parameters: { depthCompare: "always" },
+            pickable: true,
+            onClick: (i) => {
+              if (!i.object) return;
+              setSelectedId(null);
+              setVanId(null);
+              setAlertZone(null);
+              setLaneId(null);
+              setBinId(i.object.bin.id);
+              mapRef.current?.flyTo({ center: [i.object.bin.lon, i.object.bin.lat], zoom: 16.6, pitch: 60, duration: 1500 });
+            },
+          }) as unknown as Layer,
+        );
+        type Nudge = { from: [number, number]; to: [number, number] };
+        const nudges: Nudge[] = a.fullBins.map((f) => ({ from: [f.v.lon, f.v.lat], to: [f.b.bin.lon, f.b.bin.lat] }));
+        dyn.push(
+          new PathLayer<Nudge, PathStyleExtensionProps<Nudge>>({
+            id: "nudges",
+            data: nudges,
+            getPath: (n) => [
+              [...n.from, 10],
+              [...n.to, 10],
+            ],
+            getColor: [215, 55, 43, 230],
+            getWidth: 5,
+            widthMinPixels: 2.5,
+            getDashArray: [4, 3],
+            dashJustified: false,
+            getOffset: 0,
+            extensions: [new PathStyleExtension({ dash: true })],
             parameters: { depthCompare: "always" },
           }) as unknown as Layer,
         );
@@ -639,6 +946,18 @@ export default function CommandCenter() {
           if (layer.id === "lanes-skipped") {
             const l = object as Lane;
             return { text: `Lane skipped by van ${l[4]} today` };
+          }
+          if (layer.id === "bins" || layer.id === "bin-dots") {
+            const b = object as BinState;
+            return { text: `Bin ${b.bin.id} · ${Math.round(Math.min(1, b.fill) * 100)}% full` };
+          }
+          if (layer.id === "ribbons") {
+            const x = object as LaneScore;
+            return { text: x.tier === "dirty" ? "Lane with an open complaint" : `Lane clean for ${Math.floor(x.days)} days` };
+          }
+          if (layer.id === "forecast") {
+            const h = object as Hotspot;
+            return { text: `${Math.round(h.likelihood * 100)}% likely next week · ${h.driver}` };
           }
           if (layer.id === "open-then") {
             const tk = object as Ticket;
@@ -891,10 +1210,10 @@ export default function CommandCenter() {
               {tour ? <Square size={14} fill="currentColor" /> : <Film size={16} />}
               {tour ? "Stop tour" : "Play tour"}
             </button>
-            <Link href="/report" className="hover:text-chrome">
+            <Link href="/report" className="hover:text-chrome max-[1560px]:hidden">
               Resident app
             </Link>
-            <Link href="/worker" className="hover:text-chrome">
+            <Link href="/worker" className="hover:text-chrome max-[1560px]:hidden">
               Crew app
             </Link>
           </nav>
@@ -1003,24 +1322,45 @@ export default function CommandCenter() {
 
           <div className="ml-auto flex min-h-0 w-[360px] max-w-[calc(100vw-24px)] flex-col items-stretch gap-3">
             {/* ---------- layer switches ---------- */}
-            <div className="pointer-events-auto grain flex flex-col rounded-[6px] bg-night p-1.5 shadow-[0_14px_36px_rgb(0_0_0/0.5)]">
+            <div className="pointer-events-auto grain grid grid-cols-2 gap-x-1 rounded-[6px] bg-night p-1.5 shadow-[0_14px_36px_rgb(0_0_0/0.5)]">
               <Switch on={show.exposure} onClick={() => setShow((s) => ({ ...s, exposure: !s.exposure }))}>
-                Homes beside waste
+                Homes near waste
+              </Switch>
+              <Switch on={show.vans} onClick={() => setShow((s) => ({ ...s, vans: !s.vans }))}>
+                Vans
               </Switch>
               <Switch on={show.columns} onClick={() => setShow((s) => ({ ...s, columns: !s.columns }))}>
                 Chronic spots
               </Switch>
               <Switch on={show.resolved} onClick={() => setShow((s) => ({ ...s, resolved: !s.resolved }))}>
-                Cleared reports
+                Cleared
               </Switch>
-              <Switch on={show.vans} onClick={() => setShow((s) => ({ ...s, vans: !s.vans }))}>
-                Collection vans
+              <Switch on={show.bins} onClick={() => setShow((s) => ({ ...s, bins: !s.bins }))}>
+                Smart bins
+              </Switch>
+              <Switch
+                on={show.lanes}
+                onClick={() => {
+                  setLaneId(null);
+                  setShow((s) => ({ ...s, lanes: !s.lanes }));
+                }}
+              >
+                Clean lanes
+              </Switch>
+              <Switch on={show.forecast} onClick={() => setShow((s) => ({ ...s, forecast: !s.forecast }))}>
+                Forecast
               </Switch>
               <Switch on={monsoon} onClick={() => setMonsoon((m) => !m)}>
-                Monsoon simulator
+                Monsoon
+              </Switch>
+              <Switch on={sunOn} onClick={() => setSunOn((s) => !s)}>
+                Sun and night
+              </Switch>
+              <Switch on={!!split} onClick={toggleSplit}>
+                Then and now
               </Switch>
               {monsoon && (
-                <div className="mx-1.5 mb-1.5 rounded-[4px] bg-night-deep px-3 pb-3 pt-2">
+                <div className="col-span-2 mx-1.5 mb-1.5 rounded-[4px] bg-night-deep px-3 pb-3 pt-2">
                   <div className="flex items-baseline justify-between">
                     <span className="text-[12px] font-semibold text-letter/60">Rain in one day</span>
                     <span className="sign tabular text-[22px] text-[#7EAADE]">{simRain} mm</span>
@@ -1050,20 +1390,14 @@ export default function CommandCenter() {
                   </p>
                 </div>
               )}
-              <Switch on={sunOn} onClick={() => setSunOn((s) => !s)}>
-                Sun and night
-              </Switch>
               {sunOn && (
-                <p className="mx-3 -mt-1 mb-1.5 text-[12px] text-letter/60">
+                <p className="col-span-2 mx-3 mb-1.5 text-[12px] text-letter/60">
                   Real sun angle at {new Date(sunTs).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" })}. Scrub or replay to
                   see day and night.
                 </p>
               )}
-              <Switch on={!!split} onClick={toggleSplit}>
-                Then and now
-              </Switch>
               {split && (
-                <div className="mx-3 -mt-1 mb-1.5 flex items-center gap-1 text-[12px] text-letter/60">
+                <div className="col-span-2 mx-3 mb-1.5 flex items-center gap-1 text-[12px] text-letter/60">
                   Then:
                   {[7, 14, 21, 28].map((d) => (
                     <button
@@ -1077,8 +1411,23 @@ export default function CommandCenter() {
                   <span>days ago</span>
                 </div>
               )}
-              <button onClick={overview} className="flex items-center gap-2 rounded-[3px] px-3 py-2 text-[14px] font-bold text-letter/80 hover:bg-night-line">
-                <Crosshair size={16} /> Whole pilot area
+              <button
+                onClick={() => {
+                  setSelectedId(null);
+                  setVanId(null);
+                  setAlertZone(null);
+                  setBinId(null);
+                  if (plan) return setPlan(null);
+                  const spot = bins ? suggestBin(bins, tickets, at) : null;
+                  setPlan({ mode: "bin", bin: spot, van: "GB-1" });
+                  if (spot) mapRef.current?.flyTo({ center: [spot.lon, spot.lat], zoom: 16, pitch: 55, duration: 1600 });
+                }}
+                className={`sign mt-1 flex items-center justify-center gap-2 rounded-[3px] px-3 pb-0.5 pt-1.5 text-[17px] ${plan ? "bg-vermilion text-letter" : "bg-chrome text-ink hover:bg-chrome-deep"}`}
+              >
+                <ClipboardList size={15} /> {plan ? "Close planner" : "What-if planner"}
+              </button>
+              <button onClick={overview} className="mt-1 flex items-center justify-center gap-2 rounded-[3px] px-3 py-1.5 text-[13px] font-bold text-letter/80 hover:bg-night-line">
+                <Crosshair size={15} /> Whole pilot area
               </button>
             </div>
 
@@ -1138,6 +1487,35 @@ export default function CommandCenter() {
                   onClose={() => setVanId(null)}
                   onPick={focus}
                 />
+              ) : activeBin ? (
+                <BinPanel
+                  state={activeBin}
+                  nudge={fullBins.find((f) => f.b.bin.id === activeBin.bin.id)?.v ?? null}
+                  onScan={() => useStore.getState().scanBin(activeBin.bin)}
+                  onClose={() => setBinId(null)}
+                />
+              ) : laneScore ? (
+                <LanePanel score={laneScore} onClose={() => setLaneId(null)} />
+              ) : plan ? (
+                <PlannerPanel
+                  mode={plan.mode}
+                  setMode={(m) => setPlan((p) => (p ? { ...p, mode: m } : p))}
+                  bin={plan.bin}
+                  binResult={binPlan}
+                  vanId={plan.van}
+                  setVanId={(id) => setPlan((p) => (p ? { ...p, van: id } : p))}
+                  routes={routes}
+                  shift={shiftPlan}
+                  onClose={() => setPlan(null)}
+                />
+              ) : show.forecast ? (
+                <ForecastPanel
+                  spots={hotspots}
+                  onPick={(h: Hotspot) => mapRef.current?.flyTo({ center: [h.lon, h.lat], zoom: 16.3, pitch: 60, duration: 1500 })}
+                  onClose={() => setShow((s) => ({ ...s, forecast: false }))}
+                />
+              ) : show.lanes ? (
+                <LaneSummary counts={tierCounts} onClose={() => setShow((s) => ({ ...s, lanes: false }))} />
               ) : (
                 <ActivityFeed feed={feed} now={feedNow} simulating={simulating} onSimulate={() => setSimulating((x) => !x)} onPick={pickFeed} />
               )}
@@ -1283,7 +1661,7 @@ function Switch({ on, onClick, children }: { on: boolean; onClick: () => void; c
     <button
       onClick={onClick}
       aria-pressed={on}
-      className="flex items-center justify-between gap-4 rounded-[3px] px-3 py-2 text-[14px] font-bold hover:bg-night-line"
+      className="flex items-center justify-between gap-2 rounded-[3px] px-2.5 py-1.5 text-left text-[13px] font-bold leading-tight hover:bg-night-line"
     >
       {children}
       <span className={`relative h-[18px] w-[32px] rounded-full transition-colors ${on ? "bg-chrome" : "bg-night-line"}`}>

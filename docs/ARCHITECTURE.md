@@ -162,6 +162,40 @@ The building tiles and report dots are drawn twice: once for now and once for th
 
 `runTour` is an async script: `flyTo` with an await on `moveend`, timed captions, and the same state setters a person would use (select a report, open the van panel, turn on the simulator and raise the rain). During the van scene the animation loop moves the camera with the van. A token makes Stop end it at any point.
 
+### City data for planning
+
+[`scripts/export_city.py`](../scripts/export_city.py) cuts the 8,636 OpenStreetMap roads into 19,653 lane pieces of at most about 90 m (`public/data/lanes.json`, 590 KB, integer-quantised coordinates) and places a demo registry of 37 community bins every ~340 m along the van beats (`public/data/bins.json`), each tagged with its van and its distance along the van's loop.
+
+### Smart bins
+
+```
+fill = minutes since the van passed × homes within 100 m / 12,000
+     → at least 92 % after one resident "full" scan since then, + 15 % per further scan
+```
+
+Minutes are van-clock minutes from the shared clock in [`vans.ts`](../src/lib/vans.ts), so a bin empties exactly when its van drives past on the map. A bin at 90 % or more nudges the nearest van: the van whose head is closest right now, with an ETA from 1.3 × the straight-line distance. A scan is stored in the same Zustand store as reports (`binScans`), so it syncs to the command centre in another tab, and it files or backs an overflowing-bin report so it enters the queue.
+
+### Clean lanes
+
+For each lane piece, every report within 50 m of its midpoint in the last 30 days counts. If any is still open the lane is red. Otherwise its streak runs from the latest event nearby (a report filed or cleared): under 7 days amber, then 7, 14 and 21 days. Reports are bucketed in a 0.001° grid so each lane checks only its neighbourhood.
+
+### What-if planner
+
+New bin: homes are the buildings in density cells within 100 m; "newly covered" leaves out cells already within 100 m of an existing bin. Reports are garbage-dump, overflowing-bin and missed-collection reports within 100 m in the last 30 days, and the expected drop is 40 % of them, a planning assumption stated on screen. The suggested spot is the report location with the most such reports within 100 m that no bin covers.
+
+Extra shift: the van's skipped lanes from `routes.json`, their length, the buildings within 40 m of them, and the open missed-collection reports whose nearest skipped lane belongs to that van.
+
+### Hotspot forecast
+
+```
+per ~110 m cell:  Σ category weight × e^(−age in days / 12)   (drains × 1.6 after 20 mm of rain)
+                + 25 % of each neighbour's reports + 0.6 per skipped van lane
+score × (1 + 0.15 per report beyond 2, up to × 2)
+likelihood = 1 − e^(−score / 2.2), shown above 30 %
+```
+
+Category weights: garbage dump 1, overflowing bin 0.8, missed collection 0.7, blocked drain 0.6, stagnant water 0.5, dead animal 0.3. It is a transparent heuristic so an officer can see why a spot is flagged; a gradient-boosted model trained on real report history is the next step.
+
 ## Time travel
 
 The command centre's scrubber sets a virtual time `at` anywhere in the last 30 days. Every model takes `at` as input (`isOpenAt`, `ageHours`, `isOverdue`, `priority`), so the map, queue, KPIs, meters and tinting all show the city as it was at that moment. Replay advances `at` by six hours every 140 ms.

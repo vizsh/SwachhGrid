@@ -13,6 +13,7 @@ SwachhGrid's rule: **show what is real, label what is estimated, and keep demo d
 | OpenStreetMap roads via the Overpass API | 8,636 road segments in the pilot box, for van routes | ODbL | **Real** roads |
 | Route simulator in `scripts/export_routes.py` | Six van routes, 846 driven and 64 skipped lanes | — | **Simulated** on real roads |
 | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (terrarium) | Elevation for the monsoon simulator, resampled to 27 m cells | Public domain (SRTM / NASADEM) | **Real** elevation, **simulated** water |
+| `scripts/export_city.py` | 19,653 lane pieces from the OSM roads; 37 community bins along the van beats | — | **Real** lanes, **demo** bin registry |
 | Seed generators in `scripts/export_data.py` and `export_routes.py` | 330 reports over 30 days, plus 12 "truck did not come" reports beside skipped lanes | — | **Seeded demo data** |
 
 ### What the building data looks like
@@ -100,6 +101,10 @@ python scripts/export_routes.py roads.json public/data
 
 ```bash
 python scripts/export_terrain.py public/data
+```
+
+```bash
+python scripts/export_city.py roads.json public/data
 ```
 
 Run `export_routes.py` after `export_data.py`, because it appends its seeded reports to `seed.json`. `export_terrain.py` needs only NumPy and Pillow and downloads 15 small PNG tiles.

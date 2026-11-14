@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Megaphone, Radio, ThumbsUp, Truck, UserCheck, Wrench, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Megaphone, QrCode, Radio, ThumbsUp, Truck, UserCheck, Wrench, X } from "lucide-react";
 import { DAY, HOUR, type Ticket, ZONES, type ZoneId, metres } from "@/lib/domain";
 import type { FeedEvent, FeedKind } from "@/lib/store";
 import { type Routes, TIME_LAPSE, VAN_SPEED_MS, type Van, vanDistance } from "@/lib/vans";
@@ -18,6 +18,7 @@ const KIND: Record<FeedKind, { icon: typeof Radio; tone: string; label: string }
   escalated: { icon: AlertTriangle, tone: "text-vermilion", label: "Escalated" },
   reopened: { icon: AlertTriangle, tone: "text-vermilion", label: "Reopened" },
   alert: { icon: Megaphone, tone: "text-chrome", label: "Health alert" },
+  bin: { icon: QrCode, tone: "text-chrome", label: "Bin full (QR)" },
 };
 
 function ago(ms: number) {

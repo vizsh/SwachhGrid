@@ -82,6 +82,26 @@ Irregular garbage clearance, overflowing bins and blocked drains in dense urban 
 </tr>
 </table>
 
+## It plans
+
+The map also tells the city what to do next, not only what went wrong.
+
+- **What-if planner.** Opens on the spot where a new community bin would catch the most dumping that no bin covers today, and shows the homes newly within 100 m and the expected drop in reports. Drag the bin anywhere to compare. Switch to **Extra van shift** to see the lanes a van skipped today light up green, with the people along them and the "truck did not come" reports the shift would answer.
+- **Smart-bin twins.** 37 community bins stand on the map as 3D cylinders that fill between van visits. Every bin has a QR sticker (`/bins` prints the sheet). A resident scans it and says "full" in one tap on `/bin?id=…`. The bin turns red, a report enters the queue, and a dashed line nudges the nearest van towards it.
+- **Clean-lane ribbons.** Every lane with a complaint in the last 30 days is painted from red (open) through amber to green at 7, 14 and 21 days without a new one. Click a lane for its streak and a shareable "आमची गल्ली स्वच्छ · our lane, clean" card for the mohalla's WhatsApp group.
+- **Next week's hotspots.** A forecast layer raises bars where dumping is likely to come back next week, from repeat history, skipped van lanes and rain, with a ranked list naming the strongest driver for each spot.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/planner.png" alt="What-if planner: a proposed bin in Mominpura covering 185 more homes and an expected drop of 4.8 reports a month"></td>
+<td width="50%"><img src="docs/images/smart-bin.png" alt="Smart bin G203 at 92 percent after a QR scan, with a dashed nudge line from van GB-2"></td>
+</tr>
+<tr>
+<td><img src="docs/images/clean-lanes.png" alt="Clean-lane ribbons around Mahal: green lanes clean for 26 days, red beside an open complaint"></td>
+<td><img src="docs/images/forecast.png" alt="Next week's hotspots: 3D bars over the chronic spots and a ranked list with likelihoods"></td>
+</tr>
+</table>
+
 Details for each are in [docs/FEATURES.md](docs/FEATURES.md#moving-parts-what-makes-the-demo-alive). The vans are simulated on real roads, because no live van GPS is public.
 
 ## Try the whole loop in 90 seconds
@@ -108,7 +128,8 @@ flowchart LR
   subgraph Build time
     OV[Overture Maps buildings<br/>S3 GeoParquet] -->|scripts/fetch_buildings.py<br/>DuckDB + spatial| DB[(nagpur.duckdb)]
     DB -->|scripts/export_data.py| T[public/data/tiles/14/x/y.json<br/>1,35,721 footprints]
-    OSM[OSM roads via Overpass] -->|scripts/export_routes.py| RT[public/data/routes.json<br/>6 van routes, lane coverage]
+    OSM -->|scripts/export_city.py| LN
+  OSM[OSM roads via Overpass] -->|scripts/export_routes.py| RT[public/data/routes.json<br/>6 van routes, lane coverage]
     DB --> D[public/data/density.json<br/>55 m building-count grid]
     DB --> S[public/data/seed.json<br/>330 demo reports]
   end
@@ -123,6 +144,10 @@ flowchart LR
     OM[Open-Meteo rainfall] --> BW[Breeding watch]
     RT --> V[Vans, trails, skipped lanes, ETAs]
     V --> CC
+    LN[public/data/lanes.json<br/>19,653 lane pieces] --> CL[Clean lanes, planner]
+    BN[public/data/bins.json<br/>37 community bins] --> SB[Smart bins, QR stickers]
+    CL --> CC
+    SB --> CC
     TR[public/data/terrain.png<br/>lowness grid] --> FL[Monsoon simulator]
     FL --> CC
   end
@@ -165,7 +190,7 @@ python scripts/export_data.py .pylib nagpur.duckdb public/data
 
 ```
 src/
-  app/                 routes: / (landing), /report, /worker, /command
+  app/                 routes: / (landing), /report, /worker, /command, /bin, /bins
   components/
     CommandCenter.tsx  3D map, queue, zone meters, detail, replay
     ReportFlow.tsx     resident three-step report, duplicates, my reports
@@ -173,6 +198,8 @@ src/
     LandingLive.tsx    duotone hero map, live tally, top of queue
     CommandPanels.tsx  live activity feed, van detail, health alert, timeline
     VanCards.tsx       resident van ETA and crew van rounds
+    CityPanels.tsx     bin, lane streak, planner and forecast panels
+    BinPages.tsx       /bin scan page and /bins printable sticker sheet
     paint.tsx          Stamp and CustodyLine, the shared signature components
     MiniMap.tsx        drag-the-map pin picker
   lib/
@@ -180,6 +207,8 @@ src/
     store.ts           Zustand store, activity feed, localStorage persistence, cross-tab sync
     vans.ts            van routes, shared clock, ETAs, skipped-lane checks
     flood.ts           monsoon simulator: terrain lowness, drain boost, water depth
+    city.ts            smart bins, lane streaks, what-if planner, hotspot forecast
+    qr.ts              dependency-free QR encoder for bin stickers
     sun.ts             sun altitude for day and night lighting
     simulate.ts        "live morning" event simulation
     buildings.ts       building tile loader and height estimate

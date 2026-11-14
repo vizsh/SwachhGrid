@@ -20,7 +20,7 @@ import {
  * changes is kept in this browser (localStorage) and synced across tabs. Swap this module for
  * a hosted database to make reports shared between devices.
  */
-export type FeedKind = "reported" | "assigned" | "started" | "cleared" | "escalated" | "reopened" | "metoo" | "alert";
+export type FeedKind = "reported" | "assigned" | "started" | "cleared" | "escalated" | "reopened" | "metoo" | "alert" | "bin";
 export interface FeedEvent {
   id: string;
   at: number;
@@ -39,6 +39,8 @@ interface State {
   userTickets: Ticket[];
   patches: Record<string, Partial<Ticket>>;
   feed: FeedEvent[];
+  /** QR "this bin is full" scans per community bin, as timestamps */
+  binScans: Record<string, number[]>;
   load: () => Promise<void>;
   addTicket: (t: {
     lat: number;
@@ -52,6 +54,7 @@ interface State {
   log: (e: Omit<FeedEvent, "id" | "at"> & { at?: number }) => void;
   patch: (id: string, p: Partial<Ticket>) => void;
   meToo: (id: string) => void;
+  scanBin: (bin: { id: string; lat: number; lon: number }) => Ticket;
   resetDemo: () => void;
 }
 
@@ -64,6 +67,7 @@ export const useStore = create<State>()(
       userTickets: [],
       patches: {},
       feed: [],
+      binScans: {},
       log: (e) =>
         set({
           feed: [{ ...e, at: e.at ?? Date.now(), id: Math.random().toString(36).slice(2, 9) }, ...get().feed].slice(0, 60),
@@ -130,11 +134,30 @@ export const useStore = create<State>()(
         get().patch(id, { meToo: t.meToo + 1 });
         get().log({ kind: "metoo", text: `A neighbour backed the ${CATEGORIES[t.cat].label.toLowerCase()} report ${inPlace(t.locality)}`, ticketId: id, zone: t.zone, lat: t.lat, lon: t.lon });
       },
-      resetDemo: () => set({ userTickets: [], patches: {}, feed: [] }),
+      scanBin: (bin) => {
+        set({ binScans: { ...get().binScans, [bin.id]: [...(get().binScans[bin.id] ?? []).slice(-20), Date.now()] } });
+        // the scan also files (or backs) an "overflowing bin" report at the bin, so it enters the queue
+        const dup = findDuplicate(selectTickets(get()), bin.lat, bin.lon, "overflowing_bin");
+        let ticket: Ticket;
+        if (dup) {
+          get().meToo(dup.id);
+          ticket = selectTickets(get()).find((t) => t.id === dup.id) ?? dup;
+        } else {
+          ticket = get().addTicket({ lat: bin.lat, lon: bin.lon, cat: "overflowing_bin", sev: 2, note: `QR scan, bin ${bin.id}` });
+        }
+        get().log({ kind: "bin", text: `Bin ${bin.id} ${inPlace(ticket.locality)} reported full by QR scan`, ticketId: ticket.id, zone: ticket.zone, lat: bin.lat, lon: bin.lon });
+        return ticket;
+      },
+      resetDemo: () => set({ userTickets: [], patches: {}, feed: [], binScans: {} }),
     }),
     {
       name: "swachhgrid-demo-v1",
-      partialize: (s) => ({ userTickets: s.userTickets.filter((t) => t.source !== "sim"), patches: s.patches, feed: s.feed.slice(0, 30) }),
+      partialize: (s) => ({
+        userTickets: s.userTickets.filter((t) => t.source !== "sim"),
+        patches: s.patches,
+        feed: s.feed.slice(0, 30),
+        binScans: s.binScans,
+      }),
     },
   ),
 );

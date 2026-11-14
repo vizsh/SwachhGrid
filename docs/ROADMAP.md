@@ -45,6 +45,9 @@ The judging reality: most teams in this problem statement will show a complaint 
 
 ---
 
+### Built since: planning tools
+What-if planner (new bin and extra van shift), smart-bin twins with printable QR stickers and a one-tap scan page, clean-lane ribbons with a share card, and the next-week hotspot forecast are built. **Next:** real bin locations from NMC, scan data from real stickers, and a trained forecast once there are a few months of real reports.
+
 ### Built since: visual layer for the demo
 Monsoon simulator, sun and night, then-and-now split, and the cinematic tour are built (see [FEATURES.md](FEATURES.md#moving-parts-what-makes-the-demo-alive)). **Next:** a higher-resolution terrain model (CartoDEM or a drone survey) and real drain lines for the simulator; cast shadows once deck.gl's shadow support is stable.
 
@@ -92,7 +95,7 @@ Monsoon simulator, sun and night, then-and-now split, and the cinematic tour are
 
 **Effort:** 4 h.
 
-### 12. QR stickers on community bins
+### 12. QR stickers on community bins (built, with a demo bin registry)
 **Edge:** a physical touchpoint. Scan a sticker on a bin and report "overflowing" in one tap; each bin becomes a tiny digital twin with a fill history.
 
 **Build:** bin registry, a printable sticker sheet (PDF) in the Painted Notice style, and `/bin/[id]` one-tap reports.

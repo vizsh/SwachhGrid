@@ -41,6 +41,13 @@ Before you start: open `/command` once so the building tiles are cached, and pre
 - Turn on **Then and now** and drag the divider: "14 days ago, 23 open, 16 cleared since".
 - Turn on **Sun and night** and press **Replay 30 days**: the city goes through day and night.
 
+## 3:00 The city plans (`/command`)
+
+- Press **What-if planner**. It flies to Mominpura: "a bin here covers 185 more homes and should cut about 5 reports a month". Drag it somewhere else and compare. Switch to **Extra van shift**, pick **AN-2**: the lanes it skipped light up green with the reports the shift would answer.
+- Turn on **Forecast**: bars rise where dumping will come back next week, each with its reason.
+- Turn on **Clean lanes**, click a green lane: "26 days without a complaint", and press **Share** for the card.
+- Hand a judge your phone on **`/bin?id=G203`** (or a printed sticker from **`/bins`**). They press **हो, भरलेली आहे**. On the projector open **`/command?bin=G203`**: the bin is red and tall, and a dashed line nudges van GB-2 towards it.
+
 **Short on time or on stage?** Press **Play tour** in the header: a 70-second captioned flight through all of the above. **Stop tour** ends it at any point.
 
 ## 3:30 The crew (`/worker`)

@@ -34,6 +34,19 @@ Every feature below is built and runs in the deployed app unless it is marked **
 | **Then and now** | A draggable divider across the 3D city: left is 7–28 days ago, right is now. Labels count open reports on each side; reports cleared since get a green ring | One image for a review meeting: what changed | `SplitDivider` in `CommandCenter.tsx` |
 | **Play tour** | One button runs a scripted 70-second flight in eight captioned scenes, from the whole pilot area to the health alert | The demo runs itself while you talk, and cannot go wrong on stage | `runTour` in `CommandCenter.tsx` |
 
+## Planning tools
+
+| Feature | What you see | Why it matters | Where |
+|---|---|---|---|
+| **What-if planner: new bin** | Opens on the best spot for a new community bin (most dumping reports in the last 30 days that no bin covers). Shows homes newly within 100 m, homes within 100 m in all, the expected drop in reports a month, and the distance to the nearest bin. White rings are today's bins and their reach; drag the yellow bin or click to move it | Turns monitoring into a spending decision an officer can defend | `planBin`, `suggestBin` in [`city.ts`](../src/lib/city.ts), `PlannerPanel` |
+| **What-if planner: extra van shift** | Pick a van: the lanes it skipped today light up green, the camera fits them, and the panel gives lanes covered, km, people along them and the open "truck did not come" reports it would answer | A concrete, costed fix for irregular collection | `planShift` |
+| **Smart-bin twins** | 37 community bins as 3D cylinders whose height and colour show fill (green, chrome, amber, pulsing red). Fill rises with the time since the van emptied it and the homes around it; the van empties it when it passes | The bin becomes a live object, not a complaint after the fact | `binStates`, `BinPanel` |
+| **QR bin stickers** | `/bins` is a printable sheet of painted stickers, one QR per bin; `/bin?id=G203` is what a resident sees: how full, when the van comes, and one big **हो, भरलेली आहे** button | Reporting without an app, a login or reading much | [`BinPages.tsx`](../src/components/BinPages.tsx), [`qr.ts`](../src/lib/qr.ts) |
+| **Van nudge** | A scan marks the bin full, files (or backs) an overflowing-bin report, logs to the feed, and draws a dashed red line from the nearest van to the bin | The scan reaches the van, not only an inbox | `scanBin` in [`store.ts`](../src/lib/store.ts) |
+| **Clean-lane ribbons** | Each lane piece with a complaint in 30 days is painted red (open), amber (cleared under 7 days), then lime, green and deep green at 7, 14 and 21 days without a new one; the panel counts lanes per tier | Positive pressure on the lane, with no points or leaderboard to game | `laneScores`, `LaneSummary` |
+| **Lane streak and share card** | Click a lane: its streak in days, the 7/14/21 marks, and a 1080 × 1080 "आमची गल्ली स्वच्छ · our lane, clean" card to share or download | Something residents want to post in the mohalla group | `LanePanel` |
+| **Next week's hotspots** | A forecast toggle raises 3D bars by likelihood, and a ranked list names each spot's strongest driver: keeps coming back, van skipped lanes, drains after rain, or recent dumping | Crews go before anyone complains | `forecast`, `ForecastPanel` |
+
 ## Resident app (`/report`)
 
 - **Three steps, Marathi first.** What is the problem → photo → where. Language switch for मराठी, हिंदी and English; every label, category, status and custody step is translated ([`i18n.ts`](../src/lib/i18n.ts)).
@@ -84,6 +97,7 @@ Every feature below is built and runs in the deployed app unless it is marked **
 - Real NMC prabhag boundaries
 - SMS, WhatsApp and push notifications
 - AI photo classification
+- Real bin fill sensors and real vendor van GPS (the bins and vans are simulated)
 - Offline queue for reports
 - Public ward scorecards
 
