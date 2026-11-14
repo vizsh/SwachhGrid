@@ -23,6 +23,9 @@ Flat enamel sign paint at full strength. Colour owns whole regions; it is never 
 | `night-line` | `#2E3760` | Rules, dividers, inactive tracks on night |
 | `ink` | `#16130F` | Paint black: text on chrome, resident plates, buttons |
 | `letter` | `#F4F1E8` | Letter white: text on dark boards, the proof card |
+| `sign-blue` | `#2F6DB5` | Sign-painter's ultramarine: water categories only |
+
+**Category paints** stay inside this family so the map reads as one painted system: garbage dump chrome, overflowing bin letter white, blocked drain sign blue, stagnant water a blue wash (`#7EAADE`), truck did not come chrome-deep, dead animal vermilion. On the 3D map, a report past its deadline gets a vermilion ring.
 
 **Surface assignments:** landing moves through chrome → board → night → the three paints; the resident app is drenched chrome (road-sign legibility in sunlight); the crew app is board green; the command centre is night indigo (a dim control room).
 
@@ -40,6 +43,7 @@ Numbers use `tabular-nums` throughout. Display sizes are fluid (`clamp`). Marath
 
 - **Signboard** (`.pinstripe`): a flat field with a painted 2 px inset line at 8 px, coloured by `--stripe`.
 - **Grain** (`.grain`): an SVG fractal-noise texture at about 9 % alpha, so fields read as painted, not printed.
+- **Directory board**: the resident category picker. One ink board with six signboard rows: a paint bar, the Yatra One label, and a chrome icon. Rows are separated by dashed rules, never tiles.
 - **Painted button** (`.btn-paint`): Teko uppercase, 4 px corners, solid paint or a 3 px painted outline. Presses down 1 px.
 - **Stamp** (`Stamp` in [`paint.tsx`](../src/components/paint.tsx)): vermilion double-ruled rubber stamp, rotated −9°, with a noise mask for uneven ink and `mix-blend-mode: multiply`. Three states: `strike` (animates on mount), `strike={false}` (at rest), or omitted (strikes once when scrolled into view).
 - **Custody line** (`CustodyLine`): a painted vertical line through four steps. Done steps are solid dots joined by solid paint; pending steps are open rings on a dashed line. Dark and light tones; labels are localised.
@@ -60,7 +64,7 @@ Everything respects `prefers-reduced-motion`.
 
 ## Browser surfaces
 
-Text selection is chrome on ink. The caret is chrome. Focus rings are 3 px chrome with a 3 px offset. Scrollbars are thin and night-line coloured. Map attribution is retained as required by each provider.
+Text selection is chrome on ink. The caret is chrome. Focus rings are 3 px chrome with a 3 px offset. Scrollbars are thin and night-line coloured. Map credits are restyled as a small translucent paint-black caption instead of a white pill, and are retained as each provider requires.
 
 ## Accessibility
 

@@ -148,11 +148,13 @@ function Job({ t, exposed, now, onPatch }: { t: Ticket; exposed: number; now: nu
       </div>
       <div className="flex flex-1 flex-col gap-5 p-4">
         <div>
-          <span className="sign rounded-[3px] px-2 pb-0.5 pt-1 text-[16px] text-ink" style={{ background: CAT_PAINT[t.cat] }}>
-            {ZONES[t.zone].name} · Zone {ZONES[t.zone].no}
-          </span>
-          <h1 className="sign mt-2 text-[44px] text-letter">{CATEGORIES[t.cat].label}</h1>
-          <p className="text-[16px] text-letter/80">{t.locality}</p>
+          <h1 className="sign flex items-center gap-3 text-[44px] text-letter">
+            <span aria-hidden className="h-4 w-4 shrink-0 rounded-full ring-2 ring-board-deep" style={{ background: CAT_PAINT[t.cat] }} />
+            {CATEGORIES[t.cat].label}
+          </h1>
+          <p className="text-[16px] text-letter/80">
+            {t.locality} · {ZONES[t.zone].name}, Zone {ZONES[t.zone].no}
+          </p>
         </div>
 
         <dl className="grid grid-cols-2 divide-x-2 divide-letter/20 rounded-[4px] bg-board-deep">

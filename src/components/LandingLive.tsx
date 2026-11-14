@@ -117,24 +117,22 @@ export function Tally() {
   );
   const late = open.filter((t) => isOverdue(t, now)).length;
   return (
-    <div className="pinstripe grain w-[min(300px,80vw)] rounded-[6px] bg-night px-6 pb-5 pt-6 text-letter shadow-[0_18px_40px_rgb(0_0_0/0.45)] [--stripe:var(--color-chrome)] [--stripe-opacity:.55]">
-      <p className="text-[13px] font-bold opacity-80">
-        Live in the three pilot zones
-      </p>
-      <div className="mt-2 flex items-end justify-between gap-4">
+    <div className="pinstripe grain w-[min(300px,80vw)] rounded-[6px] bg-night px-5 pb-4 pt-4 text-letter shadow-[0_18px_40px_rgb(0_0_0/0.45)] [--stripe:var(--color-chrome)] [--stripe-opacity:.55] sm:px-6 sm:pb-5 sm:pt-5">
+      <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="sign tabular text-[72px] font-semibold text-chrome">
+          <div className="sign tabular text-[48px] font-semibold text-chrome sm:text-[72px]">
             {loaded ? open.length : "–"}
           </div>
           <div className="sign text-[19px]">open reports</div>
         </div>
         <div className="text-right">
-          <div className="sign tabular text-[72px] font-semibold text-vermilion">
+          <div className="sign tabular text-[48px] font-semibold text-vermilion sm:text-[72px]">
             {loaded ? late : "–"}
           </div>
           <div className="sign text-[19px]">past deadline</div>
         </div>
       </div>
+      <p className="mt-2 text-[12px] font-semibold text-letter/70">Demo data, three pilot zones</p>
     </div>
   );
 }

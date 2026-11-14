@@ -40,11 +40,11 @@ for (let x = 11791; x <= 11795; x++) for (let y = 7204; y <= 7207; y++) BUILDING
 
 /** Resolution deadlines in hours. Product defaults, not NMC policy. */
 export const CATEGORIES: Record<Category, { label: string; slaH: number; color: [number, number, number] }> = {
-  garbage_dump: { label: "Garbage dump", slaH: 24, color: [232, 163, 61] },
-  overflowing_bin: { label: "Overflowing bin", slaH: 12, color: [242, 183, 5] },
+  garbage_dump: { label: "Garbage dump", slaH: 24, color: [242, 183, 5] },
+  overflowing_bin: { label: "Overflowing bin", slaH: 12, color: [244, 241, 232] },
   blocked_drain: { label: "Blocked drain", slaH: 48, color: [47, 109, 181] },
-  stagnant_water: { label: "Stagnant water", slaH: 48, color: [43, 163, 154] },
-  missed_collection: { label: "Truck did not come", slaH: 12, color: [142, 91, 181] },
+  stagnant_water: { label: "Stagnant water", slaH: 48, color: [126, 170, 222] },
+  missed_collection: { label: "Truck did not come", slaH: 12, color: [217, 154, 0] },
   dead_animal: { label: "Dead animal", slaH: 12, color: [215, 55, 43] },
 };
 export const CATEGORY_IDS = Object.keys(CATEGORIES) as Category[];

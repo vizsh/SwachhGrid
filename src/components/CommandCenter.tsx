@@ -312,7 +312,7 @@ export default function CommandCenter() {
         radiusMaxPixels: 17,
         stroked: true,
         getFillColor: (t) => [...CATEGORIES[t.cat].color, 255] as [number, number, number, number],
-        getLineColor: (t) => (isOverdue(t, at) ? [244, 241, 232, 255] : [22, 19, 15, 255]),
+        getLineColor: (t) => (isOverdue(t, at) ? [215, 55, 43, 255] : [22, 19, 15, 255]),
         getLineWidth: (t) => (t.id === selectedId ? 4 : isOverdue(t, at) ? 2.5 : 1.5),
         lineWidthUnits: "pixels",
         parameters: { depthCompare: "always" },
@@ -612,10 +612,11 @@ function ReportDetail({
     <div className="flex flex-col gap-4 p-4">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <span className="sign rounded-[3px] px-2 pb-0.5 pt-1 text-[16px] text-ink" style={{ background: `rgb(${cat.color.join(",")})` }}>
-            {t.id}
-          </span>
-          <h2 className="sign mt-2 text-[34px] text-letter">{cat.label}</h2>
+          <h2 className="sign flex items-center gap-2.5 text-[34px] text-letter">
+            <span aria-hidden className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: `rgb(${cat.color.join(",")})` }} />
+            {cat.label}
+            <span className="sign tabular ml-1 text-[18px] text-chrome">{t.id}</span>
+          </h2>
           <p className="text-[14px] text-letter/70">
             {t.locality} · {ZONES[t.zone].name} zone (Zone {ZONES[t.zone].no})
           </p>
@@ -647,7 +648,7 @@ function ReportDetail({
       )}
 
       <dl className="grid grid-cols-3 divide-x-2 divide-night-line rounded-[3px] bg-night-deep text-center">
-        <Fact value={`~${exposed.toLocaleString("en-IN")}`} label="people within 100 m" tone="text-chrome" />
+        <Fact value={`~${exposed.toLocaleString("en-IN")}`} label="people ≤100 m" tone="text-chrome" />
         <Fact value={fmtAge(age)} label={resolved ? "to clear" : "open for"} tone={late ? "text-vermilion" : "text-letter"} />
         <Fact value={`+${t.meToo}`} label="neighbours agree" tone="text-letter" />
       </dl>

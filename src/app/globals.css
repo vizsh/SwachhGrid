@@ -180,8 +180,25 @@ body {
   cursor: grab;
 }
 
-.maplibregl-ctrl-attrib {
+/* Map credits as a small painted caption, not a white pill over the map. */
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-attrib.maplibregl-compact {
   font-size: 10px;
+  line-height: 1.35;
+  background: rgb(22 19 15 / 0.72) !important;
+  color: rgb(244 241 232 / 0.85);
+  border-radius: 3px !important;
+  max-width: 70%;
+}
+.maplibregl-ctrl-attrib a {
+  color: inherit !important;
+}
+.maplibregl-ctrl-attrib.maplibregl-compact-show .maplibregl-ctrl-attrib-inner {
+  padding-right: 6px;
+}
+.maplibregl-ctrl-attrib-button {
+  filter: invert(1);
+  background-color: transparent !important;
 }
 .maplibregl-ctrl-group {
   border-radius: 4px !important;

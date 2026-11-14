@@ -114,15 +114,13 @@ The judging reality: most teams in this problem statement will show a complaint 
 
 ## Polishing the current build
 
-From the independent design review of the redesign:
+The independent design review's material fixes are done: the phone landing now opens on the duotone map and tally; the category picker is a painted directory board; category colours stay in the paint palette; the crew map has a satellite-tile fallback; map credits are a small dark caption; labels no longer sit above headings; the tally says "Demo data" at the claim; pending custody steps have higher contrast; and place labels no longer hide under the location pin.
 
-1. Bring the duotone satellite and live tally into the phone's first screen of the landing page.
-2. Rebuild the resident category picker as painted signboard rows, and keep category colours inside the six-paint palette.
-3. Give the crew mini-map a satellite-tile fallback like the landing hero, and restyle the map attribution as a small dark caption.
-4. Remove the remaining labels above headings (zone tag, report ID chip, tally caption).
-5. Label the landing tally as demo data at the point of the claim.
-6. Raise the contrast of pending custody steps; fix the wrapped "people within 100 m" label.
-7. Keep the pin from covering the locality label on the location step.
+Still open from the review's craft ceiling:
+
+- Give the tally real hanging hardware (painted hooks and a rope), so it hangs instead of floating.
+- Paint the pinstripe as a double line with corner flourishes, as board painters do.
+- Add a tiny legend for the landing map dots (white: open, red: past deadline).
 
 ## Suggested 48-hour plan
 

@@ -45,12 +45,13 @@ export function Stamp({
   );
 }
 
+/** Category paints: chrome, letter white, sign blue (and its wash), chrome-deep, vermilion. */
 export const CAT_PAINT: Record<Ticket["cat"], string> = {
-  garbage_dump: "#E8A33D",
-  overflowing_bin: "#F2B705",
+  garbage_dump: "#F2B705",
+  overflowing_bin: "#F4F1E8",
   blocked_drain: "#2F6DB5",
-  stagnant_water: "#2BA39A",
-  missed_collection: "#8E5BB5",
+  stagnant_water: "#7EAADE",
+  missed_collection: "#D99A00",
   dead_animal: "#D7372B",
 };
 
@@ -101,7 +102,7 @@ export function CustodyLine({
               className="relative mt-[3px] h-[17px] w-[17px] shrink-0 rounded-full"
               style={{ background: s.done ? ink : "transparent", border: `3px solid ${s.done ? ink : dim}` }}
             />
-            <span className={s.done ? "" : "opacity-50"}>
+            <span className={s.done ? "" : "opacity-70"}>
               <span className="block text-[15px] font-bold leading-tight">{s.label}</span>
               {s.when && <span className="block text-[13px] opacity-70">{s.when}</span>}
             </span>

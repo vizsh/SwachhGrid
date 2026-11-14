@@ -52,8 +52,8 @@ export default function Home() {
             </div>
           </nav>
 
-          <div className="relative z-10 my-auto py-12">
-            <h1 className="painted text-balance text-[clamp(3.2rem,7.2vw,6rem)] text-ink">येथे कचरा टाकू नये.</h1>
+          <div className="relative z-10 my-auto py-7 lg:py-12">
+            <h1 className="painted text-balance text-[clamp(2.7rem,7.2vw,6rem)] text-ink">येथे कचरा टाकू नये.</h1>
             <p className="sign mt-5 max-w-[15ch] text-[clamp(2.4rem,4.6vw,4rem)] text-vermilion-deep">Or report it. The city answers in paint.</p>
             <p className="mt-6 max-w-[44ch] text-[18px] font-medium leading-relaxed">
               SwachhGrid routes every sanitation complaint in Nagpur&apos;s densest bastis to a crew with a deadline, ranks it by how many
@@ -72,12 +72,12 @@ export default function Home() {
           <p className="relative z-10 text-[14px] font-semibold">Pilot: Gandhibagh, Lakadganj and Ashi Nagar zones, Nagpur Municipal Corporation area</p>
         </div>
 
-        <div className="relative min-h-[70vh] overflow-hidden">
+        <div className="relative h-[36vh] min-h-[250px] overflow-hidden max-lg:order-first lg:h-auto lg:min-h-[70vh]">
           <HeroMapClient />
           <div className="absolute right-5 top-5 sm:right-8 sm:top-8">
             <TallyClient />
           </div>
-          <div className="absolute bottom-5 left-5 rounded-[4px] bg-ink px-3.5 py-2 text-[14px] font-bold text-letter sm:bottom-8 sm:left-8">
+          <div className="absolute bottom-5 left-5 rounded-[4px] bg-ink px-3.5 py-2 text-[14px] font-bold text-letter max-sm:hidden sm:bottom-8 sm:left-8">
             Mominpura, Gandhibagh zone. Real roofs, live reports.
           </div>
         </div>

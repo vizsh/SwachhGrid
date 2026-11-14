@@ -197,26 +197,27 @@ export default function ReportFlow() {
           {step === "cat" && (
             <section className="p-4">
               <h1 className={`${display} mb-5 text-[38px] leading-none`}>{t.whatProblem}</h1>
-              <div className="grid grid-cols-2 gap-3">
-                {CATEGORY_IDS.map((c) => {
+              {/* a painted directory board: one signboard row per problem */}
+              <ul className="overflow-hidden rounded-[6px] bg-ink">
+                {CATEGORY_IDS.map((c, i) => {
                   const Icon = ICONS[c];
                   return (
-                    <button
-                      key={c}
-                      onClick={() => {
-                        setCat(c);
-                        setStep("photo");
-                      }}
-                      className="pinstripe flex min-h-[150px] flex-col justify-between rounded-[6px] bg-ink p-4 text-left text-letter transition-transform active:scale-[0.97] [--stripe-opacity:.18] [--stripe:var(--color-letter)]"
-                    >
-                      <span className="grid h-14 w-14 place-items-center rounded-full text-ink" style={{ background: CAT_PAINT[c] }}>
-                        <Icon size={30} strokeWidth={2.4} />
-                      </span>
-                      <span className={`${display} text-[23px] leading-[1.1]`}>{t.cat[c]}</span>
-                    </button>
+                    <li key={c} className={i ? "border-t-2 border-dashed border-letter/15" : ""}>
+                      <button
+                        onClick={() => {
+                          setCat(c);
+                          setStep("photo");
+                        }}
+                        className="flex min-h-[70px] w-full items-center gap-4 px-4 py-3 text-left text-letter transition-colors active:bg-night"
+                      >
+                        <span aria-hidden className="h-9 w-[6px] shrink-0 rounded-full" style={{ background: CAT_PAINT[c] }} />
+                        <span className={`${display} flex-1 text-[26px] leading-[1.1]`}>{t.cat[c]}</span>
+                        <Icon size={30} strokeWidth={2.2} className="shrink-0 text-chrome" />
+                      </button>
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
             </section>
           )}
 
