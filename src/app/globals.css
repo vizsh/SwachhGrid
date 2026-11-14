@@ -1,26 +1,204 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* ---------- Painted Notice: flat enamel sign paint ---------- */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-chrome: #f2b705;
+  --color-chrome-deep: #d99a00;
+  --color-vermilion: #d7372b;
+  --color-vermilion-deep: #a8241b;
+  --color-board: #14513a;
+  --color-board-deep: #0d3a29;
+  --color-night: #1c2340;
+  --color-night-deep: #121830;
+  --color-night-line: #2e3760;
+  --color-ink: #16130f;
+  --color-letter: #f4f1e8;
+  --color-wall: #e9e4d6;
+  --color-sign-blue: #2f6db5;
+
+  --font-display: var(--font-yatra), "Mukta", sans-serif;
+  --font-sign: var(--font-teko), "Mukta", sans-serif;
+  --font-sans: var(--font-mukta), system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+html,
+body {
+  height: 100%;
+}
+body {
+  background: var(--color-ink);
+  color: var(--color-letter);
+  font-family: var(--font-sans);
+  caret-color: var(--color-chrome);
+  -webkit-tap-highlight-color: transparent;
+}
+::selection {
+  background: var(--color-chrome);
+  color: var(--color-ink);
+}
+:focus-visible {
+  outline: 3px solid var(--color-chrome);
+  outline-offset: 3px;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-night-line) transparent;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sign lettering: condensed, uppercase, tight. */
+.sign {
+  font-family: var(--font-sign);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.92;
+}
+.painted {
+  font-family: var(--font-display);
+  line-height: 1.08;
+}
+
+/* A signboard: flat paint with a painted pinstripe inset. */
+.pinstripe {
+  position: relative;
+}
+.pinstripe::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 2px solid var(--stripe, currentColor);
+  border-radius: 3px;
+  pointer-events: none;
+  opacity: var(--stripe-opacity, 0.9);
+}
+
+/* Paint grain: a faint brush/limewash texture on flat fields. */
+.grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Painted buttons */
+.btn-paint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  border-radius: 4px;
+  padding: 0.7em 1.15em 0.55em;
+  font-family: var(--font-sign);
+  font-size: 1.35rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1;
+  transition:
+    background-color 0.15s,
+    transform 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-paint:active {
+  transform: translateY(1px) scale(0.99);
+}
+.btn-paint:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------- The stamp: the one authored moment ---------- */
+.stamp {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 16px 6px;
+  border: 3px solid currentColor;
+  outline: 1.5px solid currentColor;
+  outline-offset: 3px;
+  border-radius: 6px;
+  color: var(--color-vermilion);
+  transform: rotate(-9deg);
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -2.4 2.15'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  mask-size: 160px;
+  mix-blend-mode: multiply;
+}
+.stamp-strike {
+  animation: stamp-strike 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes stamp-strike {
+  0% {
+    opacity: 0;
+    transform: rotate(-16deg) scale(2.1);
+    filter: blur(3px);
+  }
+  55% {
+    opacity: 1;
+    transform: rotate(-8deg) scale(0.94);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(-9deg) scale(1);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* A live arrival on the board: one short paint flash. */
+.arrive {
+  animation: arrive 1.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes arrive {
+  0% {
+    background-color: rgb(242 183 5 / 0.45);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* Time scrubber */
+.scrub {
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--color-night-line);
+}
+.scrub::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-chrome);
+  border: 3px solid var(--color-night-deep);
+  cursor: grab;
+}
+.scrub::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--color-chrome);
+  border: 3px solid var(--color-night-deep);
+  cursor: grab;
+}
+
+.maplibregl-ctrl-attrib {
+  font-size: 10px;
+}
+.maplibregl-ctrl-group {
+  border-radius: 4px !important;
+}
+.deck-tooltip {
+  font-family: var(--font-sans) !important;
+  background: var(--color-ink) !important;
+  border: 1px solid var(--color-chrome);
+  border-radius: 4px;
+  font-size: 13px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  .stamp-strike,
+  .arrive {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

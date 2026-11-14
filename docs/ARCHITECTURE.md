@@ -1,0 +1,140 @@
+# Architecture
+
+SwachhGrid is a statically prerendered Next.js 16 app. All map rendering, state and models run in the browser. There is no server and no API key: every external source is an open tile or JSON endpoint. That is why it deploys to Vercel as-is and why the demo works from a link.
+
+## Stack
+
+| Layer | Choice | Why |
+|---|---|---|
+| Framework | Next.js 16 (App Router, Turbopack), React 19, TypeScript | Static export of every route, fast Vercel deploys |
+| Styling | Tailwind CSS 4 with `@theme` tokens in [`globals.css`](../src/app/globals.css) | One token set for four very different surfaces |
+| Base map | MapLibre GL 6 | Open-source WebGL map, no key, works with any tile source |
+| 3D layers | deck.gl 9 (`SolidPolygonLayer`, `HexagonLayer`, `ScatterplotLayer`) through `@deck.gl/mapbox` `MapboxOverlay` | Extrudes 1,35,721 polygons at interactive frame rates, per-building colour updates |
+| State | Zustand with `persist` middleware | Tiny, works outside React, localStorage persistence |
+| Icons | lucide-react | One consistent stroke family |
+| Fonts | `next/font/google`: Yatra One, Teko, Mukta | Self-hosted at build, all three cover Devanagari |
+| Data pipeline | Python + DuckDB (`spatial`, `httpfs`) | Reads Overture's GeoParquet straight from S3 with a bounding-box filter |
+
+## Routes and components
+
+```
+/            src/app/page.tsx        server component; live parts load client-only
+             └ LandingLive.tsx       HeroMap (image tiles + SVG duotone), Tally, TopQueue
+/report      ReportFlow.tsx          resident flow, uses MiniMap
+/worker      WorkerApp.tsx           crew duty board and Job detail, uses MiniMap
+/command     CommandCenter.tsx       MapLibre + deck.gl overlay, queue, meters, detail, replay
+shared       paint.tsx               Stamp, CustodyLine, CAT_PAINT
+             ClientOnly.tsx          next/dynamic wrappers with ssr:false
+```
+
+Every interactive surface is loaded with `next/dynamic({ ssr: false })` from [`ClientOnly.tsx`](../src/components/ClientOnly.tsx), because MapLibre, deck.gl, `localStorage` and geolocation exist only in the browser. The landing page keeps its static copy server-rendered, so the first paint is instant and only the live map, tally and queue hydrate.
+
+## Data flow
+
+```mermaid
+sequenceDiagram
+  participant R as Resident (/report)
+  participant S as Zustand store (+ localStorage)
+  participant C as Command centre (/command)
+  participant W as Crew (/worker)
+  R->>S: addTicket(lat, lon, category, photo)
+  Note over S: zone from pin, locality from nearest named place,<br/>duplicate check within 30 m
+  S-->>C: storage event → rehydrate (other tab)
+  C->>C: exposure, priority, KPIs, meters recomputed
+  C->>S: patch(status: assigned / escalated)
+  W->>S: patch(status: in_progress)
+  W->>W: after-photo + GPS, distance ≤ 50 m?
+  W->>S: patch(status: resolved, afterPhoto, resolvedAt)
+  S-->>R: My reports shows before / after, Not cleaned reopens
+```
+
+### The store
+
+[`src/lib/store.ts`](../src/lib/store.ts) holds three things:
+
+- `seed`: the 330 demo reports from `/data/seed.json`, hydrated relative to the current time so they always look recent.
+- `userTickets`: reports the visitor filed.
+- `patches`: changes the visitor made to seeded reports (assign, escalate, resolve, reopen, me-too), stored as diffs so the seed file never changes.
+
+`selectTickets` merges the three with a memo keyed on object identity, so React re-renders only when something actually changed. `persist` writes `userTickets` and `patches` to `localStorage` under `swachhgrid-demo-v1`. A `storage` event listener rehydrates other tabs, which is what makes the resident → command centre → crew loop work live across tabs in one browser.
+
+Swapping the store for a hosted database (Supabase / Postgres + PostGIS, realtime channel) changes only this module. See [ROADMAP.md](ROADMAP.md).
+
+### Map data
+
+[`scripts/export_data.py`](../scripts/export_data.py) writes three static files:
+
+| File | Shape | Used for |
+|---|---|---|
+| `public/data/tiles/14/{x}/{y}.json` | `[[area_m2, [lon, lat, lon, lat, ...]], ...]` per zoom-14 tile, 20 tiles | Building extrusion in the command centre |
+| `public/data/density.json` | `{lat0, lon0, cell: 0.0005, counts: {"i_j": n}}` | Exposure lookups without loading polygons |
+| `public/data/seed.json` | `[{id, lat, lon, cat, sev, ageH, resolvedAgoH, meToo}]` | Demo reports |
+
+[`useBuildingTiles`](../src/lib/buildings.ts) fetches the 20 tiles in parallel and adds each as its own deck.gl layer as it arrives, so the city fills in progressively instead of waiting for 14 MB.
+
+## The models
+
+All in [`src/lib/domain.ts`](../src/lib/domain.ts).
+
+### People exposed
+
+```
+buildingsWithin(lat, lon, 100 m) = Σ counts of 55 m density cells whose centre is ≤ 100 m away
+peopleExposed = round(buildingsWithin × 4.5)
+```
+
+4.5 residents per building is a planning assumption (Indian urban household size is about 4.4; slum footprints are mostly single-household). It is labelled as an estimate everywhere it appears. The command-centre total de-duplicates cells, so two reports in the same lane do not double-count homes.
+
+### Priority
+
+```
+priority = (peopleExposed + 20) × max(0.25, daysOpen) × (0.6 + 0.4 × severity) × (1 + 0.1 × neighboursAgreeing)
+```
+
+- `+ 20` keeps a report in an empty plot from scoring zero.
+- `max(0.25, …)` gives a fresh report a minimum weight of six hours.
+- Severity is 1–3. Each "me too" adds 10 %.
+
+### Deadlines and escalation
+
+Product defaults, not NMC policy: overflowing bin, missed collection and dead animal 12 h; garbage dump 24 h; blocked drain and stagnant water 48 h. A report past its deadline turns red everywhere, gets a white ring on the map, and can be escalated to the Zonal Officer from the command centre.
+
+### Exposure tinting
+
+For each building, the nearest open report within 100 m sets a heat `w = 1 − d / 130`. The hot colour moves from chrome yellow on day 0 to vermilion by day 3. Reports are bucketed in a 0.001° grid so each building checks only its 3 × 3 neighbourhood: about 1.2 million distance checks per recolour instead of 9 million.
+
+### Mosquito-breeding watch
+
+Per zone: count open stagnant-water and blocked-drain reports older than 72 h. **High** at 6 or more, or 3 or more if the last 72 h of rainfall in Nagpur (Open-Meteo) is at least 5 mm. **Watch** at 2 or more. This is a triage signal, not an epidemiological model.
+
+### Geofenced proof
+
+The crew app reads the device GPS when the after-photo is taken. Within 50 m of the report, **Close job** unlocks. Outside it, the app states the distance and keeps the job open. A clearly labelled "Demo only: pretend I am on the spot" checkbox exists so judges can finish the loop from a desk.
+
+### Duplicates
+
+A new report of the same category within 30 m of an open one shows that report first and offers **मलाही हीच समस्या** (me too) instead of filing a duplicate.
+
+### Zone routing
+
+`zoneFor(lat, lon)` assigns one of three pilot zones from approximate rectangles. NMC publishes its 2025 ward (prabhag) boundaries only as PDF maps; tracing them is on the roadmap.
+
+## Time travel
+
+The command centre's scrubber sets a virtual time `at` anywhere in the last 30 days. Every model takes `at` as input (`isOpenAt`, `ageHours`, `isOverdue`, `priority`), so the map, queue, KPIs, meters and tinting all show the city as it was at that moment. Replay advances `at` by six hours every 140 ms.
+
+## Performance notes
+
+- Building tiles stream in parallel; each is a separate layer so recolouring one does not rebuild the others.
+- `updateTriggers` limit recolouring to changes in the risk index or the exposure toggle.
+- The landing hero uses plain `<img>` satellite tiles under an SVG duotone filter instead of a WebGL map: no GPU context, fast first paint, and the filter applies reliably.
+- MapLibre's worker is served from `/public/maplibre` (copied at `postinstall`) because Turbopack does not bundle it.
+- Photos are downscaled in the browser to 720 px JPEG at quality 0.62 (about 40–80 KB) before they are stored.
+
+## Known limits
+
+- Reports sync only between tabs of one browser until a database is added.
+- Zone boundaries are approximate rectangles.
+- Building heights are estimated from footprint area (under 45 m² ≈ one storey).
+- Seeded reports have no photos.
+- SMS and WhatsApp notifications are not implemented.
